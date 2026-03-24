@@ -1,0 +1,36 @@
+{
+  "name": "./aragon-indexer",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "codegen": "envio codegen && cd generated && npm install && npx rescript build",
+    "dev": "envio dev",
+    "start": "envio start",
+    "hasura:start": "docker start envio-hasura 2>/dev/null || docker run -d --name envio-hasura --network host -e HASURA_GRAPHQL_SERVER_PORT=8090 -e HASURA_GRAPHQL_DATABASE_URL=postgres://postgres:testing@localhost:5433/envio-dev -e HASURA_GRAPHQL_ENABLE_CONSOLE=true -e HASURA_GRAPHQL_DEV_MODE=true hasura/graphql-engine:v2.43.0",
+    "hasura:track": "bash scripts/track-tables.sh",
+    "start:server": "pnpm hasura:start && pnpm hasura:track & ENVIO_PG_PORT=5433 ENVIO_HASURA=false HASURA_GRAPHQL_ENDPOINT=http://localhost:8090/v1/metadata envio dev",
+    "status": "PGPASSWORD=testing psql -h localhost -p 5433 -U postgres -d envio-dev -c \"SELECT id as chain, progress_block, source_block, events_processed, ready_at FROM envio_chains ORDER BY id;\"",
+    "stop:server": "envio stop && docker stop envio-hasura && docker rm envio-hasura",
+    "test": "vitest run",
+    "lint": "biome check src/ test/",
+    "lint:fix": "biome check --write src/ test/",
+    "format": "biome format --write src/ test/",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
+    "@types/node": "^24.10.1",
+    "typescript": "5.9.3",
+    "viem": "^2.47.5",
+    "vitest": "4.0.18"
+  },
+  "dependencies": {
+    "envio": "3.0.0-alpha.18"
+  },
+  "optionalDependencies": {
+    "generated": "./aragon-indexer/../generated"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
