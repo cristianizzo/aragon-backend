@@ -1,0 +1,400 @@
+# ==============================
+# Enums
+# ==============================
+
+enum PluginInterfaceType {
+  tokenVoting
+  multisig
+  admin
+  addresslistVoting
+  spp
+  gauge
+  lockToVote
+  capitalDistributor
+  router
+  claimer
+  unknown
+}
+
+enum PluginStatus {
+  preInstall
+  installed
+  updated
+  uninstalled
+  abandoned
+}
+
+enum PermissionEvent {
+  Granted
+  Revoked
+}
+
+enum ProposalStatus {
+  Active
+  Succeeded
+  Defeated
+  Executed
+  Canceled
+}
+
+# ==============================
+# Core Entities
+# ==============================
+
+type Dao {
+  id: ID!
+  chainId: Int!
+  address: String! @index
+  blockNumber: Int!
+  blockTimestamp: Int!
+  transactionHash: String!
+  creatorAddress: String! @index
+  implementationAddress: String
+  ens: String
+  subdomain: String @index
+  version: String
+  metadataUri: String
+  name: String
+  description: String
+  avatar: String
+  links: Json
+  proposalCount: Int!
+  proposalsExecuted: Int!
+  uniqueVoters: Int!
+  voteCount: Int!
+  memberCount: Int!
+  plugins: [Plugin!]! @derivedFrom(field: "dao")
+  permissions: [DaoPermission!]! @derivedFrom(field: "dao")
+  proposals: [Proposal!]! @derivedFrom(field: "dao")
+}
+
+type PluginRepo {
+  id: ID!
+  chainId: Int!
+  address: String! @index
+  subdomain: String! @index
+  blockNumber: Int!
+  transactionHash: String!
+}
+
+type Plugin {
+  id: ID!
+  chainId: Int!
+  address: String! @index
+  dao: Dao! @index
+  daoAddress: String! @index
+  interfaceType: PluginInterfaceType! @index
+  status: PluginStatus! @index
+  isSupported: Boolean!
+  blockNumber: Int!
+  blockTimestamp: Int
+  transactionHash: String!
+  pluginSetupRepo: String
+  release: Int
+  build: Int
+  subdomain: String
+  tokenAddress: String
+  votingEscrow: Json
+  conditionAddress: String
+  lockManagerAddress: String
+  permissions: Json
+  subPlugins: Json
+  settings: [PluginSetting!]! @derivedFrom(field: "plugin")
+  proposals: [Proposal!]! @derivedFrom(field: "plugin")
+  votes: [Vote!]! @derivedFrom(field: "plugin")
+  members: [PluginMember!]! @derivedFrom(field: "plugin")
+}
+
+type PluginSetupLog {
+  id: ID!
+  chainId: Int!
+  event: String! @index
+  blockNumber: Int!
+  transactionHash: String!
+  logIndex: Int!
+  daoAddress: String! @index
+  pluginAddress: String! @index
+  preparedSetupId: String
+  appliedSetupId: String
+  pluginSetupRepo: String
+  sender: String
+  release: Int
+  build: Int
+  permissions: Json
+}
+
+type DaoPermission {
+  id: ID!
+  chainId: Int!
+  dao: Dao! @index
+  daoAddress: String! @index
+  blockNumber: Int!
+  transactionHash: String!
+  logIndex: Int!
+  permissionId: String! @index
+  whoAddress: String! @index
+  whereAddress: String! @index
+  event: PermissionEvent!
+  conditionAddress: String
+}
+
+type PluginSetting {
+  id: ID!
+  chainId: Int!
+  plugin: Plugin! @index
+  pluginAddress: String! @index
+  blockNumber: Int!
+  blockTimestamp: Int
+  transactionHash: String!
+  # Multisig settings
+  onlyListed: Boolean
+  minApprovals: Int
+  # TokenVoting / AddresslistVoting settings
+  votingMode: Int
+  supportThreshold: BigInt
+  minParticipation: BigInt
+  minDuration: BigInt
+  minProposerVotingPower: BigInt
+  # SPP settings
+  stages: Json
+  # Policy/Router settings
+  policy: Json
+}
+
+# ==============================
+# Governance Entities
+# ==============================
+
+type Proposal {
+  id: ID!
+  chainId: Int!
+  dao: Dao! @index
+  plugin: Plugin! @index
+  daoAddress: String! @index
+  pluginAddress: String! @index
+  proposalIndex: String! @index
+  blockNumber: Int!
+  blockTimestamp: Int
+  transactionHash: String!
+  creatorAddress: String! @index
+  metadataUri: String
+  title: String
+  summary: String
+  description: String
+  resources: Json
+  rawActions: Json
+  decodedActions: Json
+  status: ProposalStatus!
+  startDate: BigInt
+  endDate: BigInt
+  executed: Boolean!
+  executedAt: Int
+  executedTxHash: String
+  voteCount: Int!
+  votes: [Vote!]! @derivedFrom(field: "proposal")
+}
+
+type Vote {
+  id: ID!
+  chainId: Int!
+  plugin: Plugin! @index
+  proposal: Proposal! @index
+  blockNumber: Int! @index
+  blockTimestamp: Int
+  transactionHash: String!
+  daoAddress: String! @index
+  pluginAddress: String! @index
+  proposalIndex: String! @index
+  memberAddress: String! @index
+  voteOption: Int
+  votingPower: BigInt
+}
+
+# ==============================
+# Member Entities
+# ==============================
+
+type PluginMember {
+  id: ID!
+  chainId: Int!
+  plugin: Plugin! @index
+  pluginAddress: String! @index
+  memberAddress: String! @index
+  daoAddress: String! @index
+}
+
+type TokenMember {
+  id: ID!
+  chainId: Int!
+  tokenAddress: String! @index
+  memberAddress: String! @index
+  votingPower: BigInt!
+}
+
+type PluginActivityMetric {
+  id: ID!
+  chainId: Int!
+  plugin: Plugin! @index
+  pluginAddress: String! @index
+  memberAddress: String! @index
+  daoAddress: String! @index
+  voteCount: Int!
+  proposalCount: Int!
+  firstActivityBlock: Int
+  lastActivityBlock: Int
+}
+
+# ==============================
+# Token & Delegation
+# ==============================
+
+type Token {
+  id: ID!
+  chainId: Int!
+  address: String! @index
+  name: String
+  symbol: String
+  decimals: Int
+}
+
+type DelegateChangedEvent {
+  id: ID!
+  chainId: Int!
+  tokenAddress: String! @index
+  delegator: String! @index
+  fromDelegate: String!
+  toDelegate: String! @index
+  blockNumber: Int! @index
+  transactionHash: String!
+}
+
+type DelegateVotesChangedEvent {
+  id: ID!
+  chainId: Int!
+  tokenAddress: String! @index
+  delegate: String! @index
+  previousVotes: BigInt!
+  newVotes: BigInt!
+  blockNumber: Int! @index
+  transactionHash: String!
+}
+
+# ==============================
+# VE Governance (Phase 3)
+# ==============================
+
+type Lock {
+  id: ID!
+  chainId: Int!
+  escrowAddress: String! @index
+  tokenId: String! @index
+  memberAddress: String! @index
+  amount: BigInt!
+  blockNumber: Int!
+  blockTimestamp: Int
+  transactionHash: String!
+  isWithdrawn: Boolean!
+  withdrawnAt: Int
+  exitQueued: Boolean!
+  exitQueuedAt: Int
+  exitCancelled: Boolean!
+}
+
+type TokenDelegation {
+  id: ID!
+  chainId: Int!
+  escrowAddress: String! @index
+  delegator: String! @index
+  delegatee: String! @index
+  tokenIds: [String!]!
+  isDelegated: Boolean!
+  blockNumber: Int! @index
+  transactionHash: String!
+}
+
+type LockToVoteMember {
+  id: ID!
+  chainId: Int!
+  lockManagerAddress: String! @index
+  memberAddress: String! @index
+  lockedAmount: BigInt!
+}
+
+# ==============================
+# Gauge Voting (Phase 4)
+# ==============================
+
+enum GaugeStatus {
+  Active
+  Deactivated
+}
+
+type Gauge {
+  id: ID!
+  chainId: Int!
+  address: String! @index
+  pluginAddress: String! @index
+  creatorAddress: String!
+  metadataUri: String
+  status: GaugeStatus!
+  blockNumber: Int!
+  transactionHash: String!
+}
+
+type GaugeVote {
+  id: ID!
+  chainId: Int!
+  pluginAddress: String! @index
+  gaugeAddress: String! @index
+  voterAddress: String! @index
+  epoch: String! @index
+  votingPower: BigInt!
+  blockNumber: Int!
+  blockTimestamp: Int
+  transactionHash: String!
+}
+
+# ==============================
+# Capital Distribution (Phase 4)
+# ==============================
+
+type Campaign {
+  id: ID!
+  chainId: Int!
+  pluginAddress: String! @index
+  campaignId: String! @index
+  metadataUri: String
+  token: String
+  startTime: BigInt
+  endTime: BigInt
+  merkleRoot: String
+  isPaused: Boolean!
+  isEnded: Boolean!
+  blockNumber: Int!
+  transactionHash: String!
+}
+
+# ==============================
+# Selector Permissions (Phase 4)
+# ==============================
+
+type SelectorPermission {
+  id: ID!
+  chainId: Int!
+  conditionAddress: String! @index
+  selector: String! @index
+  whereAddress: String! @index
+  allowed: Boolean!
+  blockNumber: Int!
+  transactionHash: String!
+}
+
+type NativeTransferPermission {
+  id: ID!
+  chainId: Int!
+  conditionAddress: String! @index
+  whereAddress: String! @index
+  allowed: Boolean!
+  blockNumber: Int!
+  transactionHash: String!
+}
