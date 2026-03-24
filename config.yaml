@@ -1,0 +1,485 @@
+# yaml-language-server: $schema=./node_modules/envio/evm.schema.json
+name: aragon-indexer
+description: Aragon DAO Protocol Indexer
+
+field_selection:
+  transaction_fields:
+    - hash
+    - from
+    - to
+
+contracts:
+  # =============================================
+  # Phase 1: Core Registry Contracts (known addresses)
+  # =============================================
+  - name: DAORegistry
+    events:
+      - event: DAORegistered(address indexed dao, address indexed creator, string subdomain)
+
+  - name: PluginRepoRegistry
+    events:
+      - event: PluginRepoRegistered(string subdomain, address pluginRepo)
+
+  - name: PluginSetupProcessor
+    events:
+      - event: InstallationPrepared(address indexed sender, address indexed dao, bytes32 preparedSetupId, address indexed pluginSetupRepo, (uint8, uint16) versionTag, bytes data, address plugin, (address[], (uint8, address, address, address, bytes32)[]) preparedSetupData)
+      - event: InstallationApplied(address indexed dao, address indexed plugin, bytes32 preparedSetupId, bytes32 appliedSetupId)
+      - event: UpdatePrepared(address indexed sender, address indexed dao, bytes32 preparedSetupId, address indexed pluginSetupRepo, (uint8, uint16) versionTag, (address, address[], bytes) setupPayload, (address[], (uint8, address, address, address, bytes32)[]) preparedSetupData, bytes initData)
+      - event: UpdateApplied(address indexed dao, address indexed plugin, bytes32 preparedSetupId, bytes32 appliedSetupId)
+      - event: UninstallationPrepared(address indexed sender, address indexed dao, bytes32 preparedSetupId, address indexed pluginSetupRepo, (uint8, uint16) versionTag, (address, address[], bytes) setupPayload, (uint8, address, address, address, bytes32)[] permissions)
+      - event: UninstallationApplied(address indexed dao, address indexed plugin, bytes32 preparedSetupId)
+
+  # =============================================
+  # Phase 1: DAO Contract (factory-registered from DAORegistered)
+  # =============================================
+  - name: DAO
+    events:
+      - event: MetadataSet(bytes metadata)
+      - event: NativeTokenDeposited(address sender, uint256 amount)
+      - event: "Granted(bytes32 indexed permissionId, address indexed here, address where, address indexed who, address condition)"
+      - event: "Revoked(bytes32 indexed permissionId, address indexed here, address where, address indexed who)"
+      - event: "Executed(address indexed actor, bytes32 callId, (address, uint256, bytes)[] actions, uint256 allowFailureMap, uint256 failureMap, bytes[] execResults)"
+
+  # =============================================
+  # Phase 2: Governance Plugin Contracts (factory-registered)
+  # =============================================
+  - name: Multisig
+    events:
+      - event: MultisigSettingsUpdated(bool onlyListed, uint16 indexed minApprovals)
+      - event: MembersAdded(address[] members)
+      - event: MembersRemoved(address[] members)
+      - event: "ProposalCreated(uint256 indexed proposalId, address indexed creator, uint64 startDate, uint64 endDate, bytes metadata, (address, uint256, bytes)[] actions, uint256 allowFailureMap)"
+        name: MultisigProposalCreated
+      - event: ProposalExecuted(uint256 indexed proposalId)
+        name: MultisigProposalExecuted
+      - event: Approved(uint256 indexed proposalId, address indexed approver)
+
+  - name: TokenVoting
+    events:
+      - event: VotingSettingsUpdated(uint8 votingMode, uint32 supportThreshold, uint32 minParticipation, uint64 minDuration, uint256 minProposerVotingPower)
+      - event: "ProposalCreated(uint256 indexed proposalId, address indexed creator, uint64 startDate, uint64 endDate, bytes metadata, (address, uint256, bytes)[] actions, uint256 allowFailureMap)"
+        name: TokenVotingProposalCreated
+      - event: ProposalExecuted(uint256 indexed proposalId)
+        name: TokenVotingProposalExecuted
+      - event: VoteCast(uint256 indexed proposalId, address indexed voter, uint8 voteOption, uint256 votingPower)
+
+  - name: StagedProposalProcessor
+    events:
+      - event: ProposalResultReported(uint256 indexed proposalId, uint16 indexed stageId, address indexed body)
+      - event: ProposalCanceled(uint256 indexed proposalId, uint16 indexed stageId, address indexed sender)
+      - event: "ProposalEdited(uint256 indexed proposalId, uint16 indexed stageId, address indexed sender, bytes metadata, (address, uint256, bytes)[] actions)"
+      - event: ProposalAdvanced(uint256 indexed proposalId, uint16 indexed stageId, address indexed sender)
+      - event: "ProposalCreated(uint256 indexed proposalId, address indexed creator, uint64 startDate, uint64 endDate, bytes metadata, (address, uint256, bytes)[] actions, uint256 allowFailureMap)"
+        name: SPPProposalCreated
+      - event: ProposalExecuted(uint256 indexed proposalId)
+        name: SPPProposalExecuted
+      - event: MetadataSet(bytes metadata)
+        name: SPPMetadataSet
+
+  # =============================================
+  # Phase 3: Governance Token Contracts (factory-registered)
+  # =============================================
+  - name: GovernanceERC20
+    events:
+      - event: DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate)
+      - event: DelegateVotesChanged(address indexed delegate, uint256 previousBalance, uint256 newBalance)
+
+  # =============================================
+  # Phase 3: VE Governance Contracts (factory-registered via RPC discovery)
+  # =============================================
+  - name: VotingEscrow
+    events:
+      - event: Deposit(address indexed depositor, uint256 indexed tokenId, uint256 indexed startTs, uint256 value, uint256 newTotalLocked)
+      - event: Withdraw(address indexed depositor, uint256 indexed tokenId, uint256 value, uint256 ts, uint256 newTotalLocked)
+      - event: MinDepositSet(uint256 minDeposit)
+      - event: TokensDelegated(address indexed sender, address indexed delegatee, uint256[] tokenIds)
+      - event: TokensUndelegated(address indexed sender, address indexed delegatee, uint256[] tokenIds)
+
+  - name: ExitQueue
+    events:
+      - event: ExitQueued(uint256 indexed tokenId, address indexed holder, uint256 exitDate)
+      - event: ExitQueuedV2(uint256 indexed tokenId, address indexed holder, uint48 queuedAt)
+      - event: ExitCancelled(uint256 indexed tokenId, address indexed holder)
+      - event: MinLockSet(uint48 minLock)
+      - event: ExitFeePercentAdjusted(uint256 maxFeePercent, uint256 minFeePercent, uint48 minCooldown, uint8 feeType)
+
+  - name: LockManager
+    events:
+      - event: BalanceLocked(address indexed voter, uint256 amount)
+      - event: BalanceUnlocked(address indexed voter, uint256 amount)
+
+  - name: LockToVote
+    events:
+      - event: VoteCast(uint256 indexed proposalId, address indexed voter, uint8 voteOption, uint256 votingPower)
+        name: LockToVoteVoteCast
+      - event: VoteCleared(uint256 indexed proposalId, address indexed voter)
+      - event: "ProposalCreated(uint256 indexed proposalId, address indexed creator, uint64 startDate, uint64 endDate, bytes metadata, (address, uint256, bytes)[] actions, uint256 allowFailureMap)"
+        name: LockToVoteProposalCreated
+      - event: ProposalExecuted(uint256 indexed proposalId)
+        name: LockToVoteProposalExecuted
+      - event: VotingSettingsUpdated(uint8 votingMode, uint32 supportThresholdRatio, uint32 minParticipationRatio, uint32 minApprovalRatio, uint64 proposalDuration, uint256 minProposerVotingPower)
+        name: LockToVoteSettingsUpdated
+
+  # =============================================
+  # Phase 4: Gauge Voting (factory-registered from gauge plugins)
+  # =============================================
+  - name: GaugeVoter
+    events:
+      - event: GaugeCreated(address indexed gauge, address indexed creator, string metadataURI)
+      - event: GaugeActivated(address indexed gauge)
+      - event: GaugeDeactivated(address indexed gauge)
+      - event: GaugeMetadataUpdated(address indexed gauge, string metadataURI)
+      - event: Voted(address indexed voter, address indexed gauge, uint256 indexed epoch, uint256 votingPowerCastForGauge, uint256 totalVotingPowerInGauge, uint256 totalVotingPowerInContract, uint256 timestamp)
+      - event: Reset(address indexed voter, address indexed gauge, uint256 indexed epoch, uint256 votingPowerRemovedFromGauge, uint256 totalVotingPowerInGauge, uint256 totalVotingPowerInContract, uint256 timestamp)
+
+  # =============================================
+  # Phase 4: Capital Distribution (factory-registered from capitalDistributor plugins)
+  # =============================================
+  - name: CapitalDistributor
+    events:
+      - event: CampaignCreated(uint256 indexed campaignId, bytes metadataUri, address indexed allocationStrategy, address token, address actionEncoder, uint64 startTime, uint64 endTime)
+      - event: MerkleCampaignSet(uint256 indexed campaignId, bytes32 merkleRoot)
+      - event: MerkleCampaignUpdated(uint256 indexed campaignId, bytes32 oldMerkleRoot, bytes32 newMerkleRoot)
+      - event: CampaignPaused(uint256 indexed campaignId)
+      - event: CampaignResumed(uint256 indexed campaignId)
+      - event: CampaignEnded(uint256 indexed campaignId)
+
+  # =============================================
+  # Phase 4: Execute Selector Condition (factory-registered from condition addresses)
+  # =============================================
+  - name: ExecuteSelectorCondition
+    events:
+      - event: SelectorAllowed(bytes4 selector, address where)
+      - event: SelectorDisallowed(bytes4 selector, address where)
+      - event: NativeTransfersAllowed(address where)
+      - event: NativeTransfersDisallowed(address where)
+
+# =============================================
+# Chain Configurations
+# =============================================
+chains:
+  # --- Ethereum Mainnet ---
+  - id: 1
+    start_block: 16721812
+    rpc:
+      - url: https://lb.drpc.org/ogrpc?network=ethereum&dkey=${NODES_DRPC_API_KEY}
+      - url: https://eth-mainnet.g.alchemy.com/v2/${NODES_ALCHEMY_API_KEY}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0x7a62da7B56fB3bfCdF70E900787010Bc4c9Ca42e
+      - name: PluginRepoRegistry
+        address:
+          - 0x5B3B36BdC9470963A2734D6a0d2F6a64C21C159f
+      - name: PluginSetupProcessor
+        address:
+          - 0xE978942c691e43f65c1B7c7F8f1dc8cDF061B13f
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- Ethereum Sepolia ---
+  - id: 11155111
+    start_block: 4415294
+    rpc:
+      - url: https://lb.drpc.org/ogrpc?network=sepolia&dkey=${NODES_DRPC_API_KEY}
+      - url: https://eth-sepolia.g.alchemy.com/v2/${NODES_ALCHEMY_API_KEY}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0x308a1DC5020c4B5d992F5543a7236c465997fecB
+      - name: PluginRepoRegistry
+        address:
+          - 0x35B62715459cB60bf6dC17fF8cfe138EA305E7Ee
+      - name: PluginSetupProcessor
+        address:
+          - 0xC24188a73dc09aA7C721f96Ad8857B469C01dC9f
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- Polygon Mainnet ---
+  - id: 137
+    start_block: 40828385
+    rpc:
+      - url: https://lb.drpc.org/ogrpc?network=polygon&dkey=${NODES_DRPC_API_KEY}
+      - url: https://polygon-mainnet.g.alchemy.com/v2/${NODES_ALCHEMY_API_KEY}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0x96E54098317631641703404C06A5afAD89da7373
+      - name: PluginRepoRegistry
+        address:
+          - 0xA03C2182af8eC460D498108C92E8638a580b94d4
+      - name: PluginSetupProcessor
+        address:
+          - 0x879D9dfe3F36d7684BeC1a2bB4Aa8E8871A7245B
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- Arbitrum Mainnet ---
+  - id: 42161
+    start_block: 145461945
+    rpc:
+      - url: https://lb.drpc.org/ogrpc?network=arbitrum&dkey=${NODES_DRPC_API_KEY}
+      - url: https://arb-mainnet.g.alchemy.com/v2/${NODES_ALCHEMY_API_KEY}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0xB5146Fd572C669ABC353902e43F47fda4609E38A
+      - name: PluginRepoRegistry
+        address:
+          - 0xCe0B4124dea6105bfB85fB4461c4D39f360E9ef3
+      - name: PluginSetupProcessor
+        address:
+          - 0x308a1DC5020c4B5d992F5543a7236c465997fecB
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- Base Mainnet ---
+  - id: 8453
+    start_block: 2094661
+    rpc:
+      - url: https://lb.drpc.org/ogrpc?network=base&dkey=${NODES_DRPC_API_KEY}
+      - url: https://base-mainnet.g.alchemy.com/v2/${NODES_ALCHEMY_API_KEY}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0xeB98a71d69a1e12B62c10368D9dA5364CE0f7178
+      - name: PluginRepoRegistry
+        address:
+          - 0xB5eB5C011827C9F5787ceE3Abc72d247E36a5a0D
+      - name: PluginSetupProcessor
+        address:
+          - 0x91a851E9Ed7F2c6d41b15F76e4a88f5A37067cC9
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- zkSync Mainnet ---
+  - id: 324
+    start_block: 37460684
+    rpc:
+      - url: https://lb.drpc.org/ogrpc?network=zksync&dkey=${NODES_DRPC_API_KEY}
+      - url: https://zksync-mainnet.g.alchemy.com/v2/${NODES_ALCHEMY_API_KEY}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0xE7351bA0DDCc52249F27353893BcDBC74229e99d
+      - name: PluginRepoRegistry
+        address:
+          - 0xEa26fC4028D9293f453804b40F097F11974FdB79
+      - name: PluginSetupProcessor
+        address:
+          - 0x8E3e98ECF5CdBF2bEcCD91d3BA580D472df5A0cB
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- Optimism Mainnet ---
+  - id: 10
+    start_block: 135600980
+    rpc:
+      - url: https://lb.drpc.org/ogrpc?network=optimism&dkey=${NODES_DRPC_API_KEY}
+      - url: https://opt-mainnet.g.alchemy.com/v2/${NODES_ALCHEMY_API_KEY}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0x4588AF9a4938b9078e1BC74626a8ea4f18b410DE
+      - name: PluginRepoRegistry
+        address:
+          - 0xaD7e6a576B7C05d9EAC90C34E462cB0d04E10d4F
+      - name: PluginSetupProcessor
+        address:
+          - 0x2379dC18b4A939a2b76f5c79F58aA49193DA56c2
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- Avalanche Mainnet ---
+  - id: 43114
+    start_block: 63240982
+    rpc:
+      - url: https://lb.drpc.org/ogrpc?network=avalanche&dkey=${NODES_DRPC_API_KEY}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0x695979DcE2422EFC6E48594e18D04EC6C48dE4De
+      - name: PluginRepoRegistry
+        address:
+          - 0xC2eB42f6CB3bdC5652dF1196456e94d346E1FD25
+      - name: PluginSetupProcessor
+        address:
+          - 0x95902780bd390a32F2E1eDf02623f8E636ceE518
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- Katana Mainnet ---
+  - id: 747474
+    start_block: 15070184
+    rpc:
+      - url: ${NODES_KATANA_RPC_URL}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0x1Db6c906E67aEFc3d132A0341E27593Ca5C11eaE
+      - name: PluginRepoRegistry
+        address:
+          - 0xAcbbB9C12e71BD39E9979130E3472790e3529058
+      - name: PluginSetupProcessor
+        address:
+          - 0x6240E3afA085B8393Eb072911f3D65EF080B6bEf
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- Peaq Mainnet ---
+  - id: 3338
+    start_block: 4032399
+    rpc:
+      - url: ${NODES_PEAQ_RPC_URL}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0xC4DDBD0472c2688f5D278DAFc02e66eE176C8dE3
+      - name: PluginRepoRegistry
+        address:
+          - 0x85138280659Cc0Ca3F40579e2C8F2713Fbaa8878
+      - name: PluginSetupProcessor
+        address:
+          - 0x08633901Ddf9Cd8e2DC3a073594D0A7dad6F3f57
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- Chiliz Mainnet ---
+  - id: 88888
+    start_block: 23759200
+    rpc:
+      - url: ${NODES_CHILIZ_RPC_URL}
+    contracts:
+      - name: DAORegistry
+        address:
+          - 0x0Ac9cC8F27b13A0389039Ca62462E6E34d5bd85d
+      - name: PluginRepoRegistry
+        address:
+          - 0xCcf0A006e88Fd7a9b5dab04310F4223D04128672
+      - name: PluginSetupProcessor
+        address:
+          - 0xD39fd78987000C1aa96209D76Bec576F31Dbc9BE
+      - name: DAO
+      - name: Multisig
+      - name: TokenVoting
+      - name: StagedProposalProcessor
+      - name: GovernanceERC20
+      - name: VotingEscrow
+      - name: ExitQueue
+      - name: LockManager
+      - name: LockToVote
+      - name: GaugeVoter
+      - name: CapitalDistributor
+      - name: ExecuteSelectorCondition
+
+  # --- zkSync Sepolia (disabled - no HyperSync support) ---
+  # - id: 300
+  #   start_block: 2441175
+  #   contracts:
+  #     - name: DAORegistry
+  #       address: 0x9305Ecd8D3837F7AC4f425dA578a0D11352D317A
+  #     - name: PluginRepoRegistry
+  #       address: 0x22eE909B94c5FAeee67B7e187ca81E5A291A9EC0
+  #     - name: PluginSetupProcessor
+  #       address: 0xe2Ef39f1be2269644cBfa9b70003A143bF1fdf4d
