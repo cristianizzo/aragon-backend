@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+.pnpm-store
+
+# Generated (regenerated via pnpm codegen)
+generated/
+
+# Environment
+.env
+.env.local
+
+# Build
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# Rescript artifacts
+*.exe
+*.obj
+*.out
+*.compile
+*.native
+*.byte
+*.cmo
+*.annot
+*.cmi
+*.cmx
+*.cmt
+*.cmti
+*.cma
+*.a
+*.cmxa
+*~
+*.cmj
+*.bak
+lib/*
+*.mlast
+*.mliast
+.merlin
+.bsb.lock
+*.res.js
+*.res.mjs
+
+# Envio
+cache
+!.envio/cache/
+artifacts
+benchmarks/
+
+# Migration reference (not part of the indexer)
+migration/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lock files (keep pnpm-lock.yaml)
+package-lock.json
