@@ -1,16 +1,18 @@
 import { Multisig } from "generated";
-import { safeJsonParse, VoteOption } from "../constants";
+import { VoteOption } from "../constants";
 import { decodeProposalActions } from "../effects/decodeActions";
 import { fetchProposalMetadata } from "../effects/ipfs";
-import { extractIpfsCid } from "../utils/metadata";
+import { eventId, pluginMemberId, proposalId as makeProposalId } from "../utils/ids";
+import { extractIpfsCid, parseRawActions, safeJsonParse } from "../utils/metadata";
 import { trackPluginActivity } from "../utils/metrics";
 
 Multisig.MultisigSettingsUpdated.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const pluginId = `${chainId}-${pluginAddress}`;
 
-  const plugin = await context.Plugin.get(pluginId);
+  // Find active plugin by address
+  const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
   if (!plugin) return;
 
   // Update plugin interface type if still unknown
@@ -18,11 +20,12 @@ Multisig.MultisigSettingsUpdated.handler(async ({ event, context }) => {
     context.Plugin.set({ ...plugin, interfaceType: "multisig", isSupported: true });
   }
 
-  const settingId = `${chainId}-${pluginAddress}-${event.transaction.hash}`;
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const settingId = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
   context.PluginSetting.set({
     id: settingId,
     chainId,
-    plugin_id: pluginId,
+    plugin_id: plugin.id,
     pluginAddress,
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
@@ -42,17 +45,18 @@ Multisig.MultisigSettingsUpdated.handler(async ({ event, context }) => {
 Multisig.MembersAdded.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const pluginId = `${chainId}-${pluginAddress}`;
 
-  const plugin = await context.Plugin.get(pluginId);
+  // Find active plugin by address
+  const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
   if (!plugin) return;
 
   for (const member of event.params.members) {
-    const memberId = `${chainId}-${pluginAddress}-${member}`;
+    const memberId = pluginMemberId({ chainId, pluginAddress, memberAddress: member });
     context.PluginMember.set({
       id: memberId,
       chainId,
-      plugin_id: pluginId,
+      plugin_id: plugin.id,
       pluginAddress,
       memberAddress: member,
       daoAddress: plugin.daoAddress,
@@ -72,13 +76,14 @@ Multisig.MembersAdded.handler(async ({ event, context }) => {
 Multisig.MembersRemoved.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const pluginId = `${chainId}-${pluginAddress}`;
 
-  const plugin = await context.Plugin.get(pluginId);
+  // Find active plugin by address
+  const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
   if (!plugin) return;
 
   for (const member of event.params.members) {
-    const memberId = `${chainId}-${pluginAddress}-${member}`;
+    const memberId = pluginMemberId({ chainId, pluginAddress, memberAddress: member });
     context.PluginMember.deleteUnsafe(memberId);
   }
 
@@ -95,21 +100,18 @@ Multisig.MembersRemoved.handler(async ({ event, context }) => {
 Multisig.MultisigProposalCreated.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const pluginId = `${chainId}-${pluginAddress}`;
   const proposalIndex = event.params.proposalId.toString();
 
-  const plugin = await context.Plugin.get(pluginId);
+  // Find active plugin by address
+  const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
   if (!plugin) return;
 
   const cid = extractIpfsCid(event.params.metadata);
   const metadata = cid ? await context.effect(fetchProposalMetadata, cid) : null;
 
   // Extract and decode proposal actions
-  const rawActions = event.params.actions.map((a: any) => ({
-    to: String(a[0] ?? a.to ?? ""),
-    value: String(a[1] ?? a.value ?? "0"),
-    data: String(a[2] ?? a.data ?? "0x"),
-  }));
+  const rawActions = parseRawActions(event.params.actions);
 
   const decodedActions =
     rawActions.length > 0
@@ -120,12 +122,12 @@ Multisig.MultisigProposalCreated.handler(async ({ event, context }) => {
         })
       : null;
 
-  const proposalId = `${chainId}-${pluginAddress}-${proposalIndex}`;
+  const propId = makeProposalId({ chainId, txHash: event.transaction.hash, pluginAddress, proposalIndex });
   context.Proposal.set({
-    id: proposalId,
+    id: propId,
     chainId,
     dao_id: plugin.dao_id,
-    plugin_id: pluginId,
+    plugin_id: plugin.id,
     daoAddress: plugin.daoAddress,
     pluginAddress,
     proposalIndex,
@@ -155,7 +157,7 @@ Multisig.MultisigProposalCreated.handler(async ({ event, context }) => {
     context.Dao.set({ ...dao, proposalCount: dao.proposalCount + 1 });
     await trackPluginActivity(context, {
       chainId,
-      pluginId: pluginId,
+      pluginId: plugin.id,
       pluginAddress,
       memberAddress: event.params.creator,
       daoAddress: plugin.daoAddress,
@@ -169,9 +171,10 @@ Multisig.MultisigProposalExecuted.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
   const proposalIndex = event.params.proposalId.toString();
-  const proposalId = `${chainId}-${pluginAddress}-${proposalIndex}`;
 
-  const proposal = await context.Proposal.get(proposalId);
+  // Find proposal by pluginAddress + proposalIndex (we don't have creation txHash)
+  const proposals = await context.Proposal.getWhere({ pluginAddress: { _eq: pluginAddress }, proposalIndex: { _eq: proposalIndex } });
+  const proposal = proposals.find((p: any) => p.chainId === chainId);
   if (!proposal) return;
 
   context.Proposal.set({
@@ -191,19 +194,24 @@ Multisig.MultisigProposalExecuted.handler(async ({ event, context }) => {
 Multisig.Approved.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const pluginId = `${chainId}-${pluginAddress}`;
   const proposalIndex = event.params.proposalId.toString();
-  const proposalId = `${chainId}-${pluginAddress}-${proposalIndex}`;
 
-  const plugin = await context.Plugin.get(pluginId);
+  // Find active plugin by address
+  const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
   if (!plugin) return;
 
-  const voteId = `${chainId}-${pluginAddress}-${proposalIndex}-${event.params.approver}`;
+  // Find proposal by pluginAddress + proposalIndex
+  const proposals = await context.Proposal.getWhere({ pluginAddress: { _eq: pluginAddress }, proposalIndex: { _eq: proposalIndex } });
+  const proposal = proposals.find((p: any) => p.chainId === chainId);
+
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const vId = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
   context.Vote.set({
-    id: voteId,
+    id: vId,
     chainId,
-    plugin_id: pluginId,
-    proposal_id: proposalId,
+    plugin_id: plugin.id,
+    proposal_id: proposal?.id ?? "",
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
@@ -213,10 +221,10 @@ Multisig.Approved.handler(async ({ event, context }) => {
     memberAddress: event.params.approver,
     voteOption: VoteOption.Yes, // Multisig Approved = always Yes
     votingPower: undefined,
+    replacedBy: undefined,
   });
 
   // Update vote count + DAO metrics
-  const proposal = await context.Proposal.get(proposalId);
   if (proposal) {
     context.Proposal.set({ ...proposal, voteCount: proposal.voteCount + 1 });
   }
@@ -226,7 +234,7 @@ Multisig.Approved.handler(async ({ event, context }) => {
   }
   await trackPluginActivity(context, {
     chainId,
-    pluginId,
+    pluginId: plugin.id,
     pluginAddress,
     memberAddress: event.params.approver,
     daoAddress: plugin.daoAddress,

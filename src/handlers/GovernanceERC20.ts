@@ -1,11 +1,13 @@
 import { GovernanceERC20 } from "generated";
 import { ZERO_ADDRESS } from "../constants";
+import { eventId, tokenMemberId } from "../utils/ids";
 
 GovernanceERC20.DelegateChanged.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const tokenAddress = event.srcAddress;
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
 
-  const id = `${chainId}-${event.transaction.hash}-${event.logIndex}`;
+  const id = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
   context.DelegateChangedEvent.set({
     id,
     chainId,
@@ -26,9 +28,10 @@ GovernanceERC20.DelegateVotesChanged.handler(async ({ event, context }) => {
   if (delegate === ZERO_ADDRESS) return;
 
   // Log the event
-  const eventId = `${chainId}-${event.transaction.hash}-${event.logIndex}`;
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const evtId = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
   context.DelegateVotesChangedEvent.set({
-    id: eventId,
+    id: evtId,
     chainId,
     tokenAddress,
     delegate,
@@ -39,11 +42,11 @@ GovernanceERC20.DelegateVotesChanged.handler(async ({ event, context }) => {
   });
 
   // Update or create TokenMember with current voting power
-  const tokenMemberId = `${chainId}-${tokenAddress}-${delegate}`;
-  const existing = await context.TokenMember.get(tokenMemberId);
+  const tmId = tokenMemberId({ chainId, tokenAddress, memberAddress: delegate });
+  const existing = await context.TokenMember.get(tmId);
 
   context.TokenMember.set({
-    id: tokenMemberId,
+    id: tmId,
     chainId,
     tokenAddress,
     memberAddress: delegate,

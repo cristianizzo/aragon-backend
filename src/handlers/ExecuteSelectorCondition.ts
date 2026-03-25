@@ -1,18 +1,18 @@
 import { ExecuteSelectorCondition } from "generated";
+import { eventId } from "../utils/ids";
 
 ExecuteSelectorCondition.SelectorAllowed.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const conditionAddress = event.srcAddress;
-  const selector = event.params.selector;
-  const whereAddress = event.params.where;
-  const id = `${chainId}-${conditionAddress}-${selector}-${whereAddress}`;
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const id = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
 
   context.SelectorPermission.set({
     id,
     chainId,
     conditionAddress,
-    selector,
-    whereAddress,
+    selector: event.params.selector,
+    whereAddress: event.params.where,
     allowed: true,
     blockNumber: event.block.number,
     transactionHash: event.transaction.hash,
@@ -22,27 +22,33 @@ ExecuteSelectorCondition.SelectorAllowed.handler(async ({ event, context }) => {
 ExecuteSelectorCondition.SelectorDisallowed.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const conditionAddress = event.srcAddress;
-  const selector = event.params.selector;
-  const whereAddress = event.params.where;
-  const id = `${chainId}-${conditionAddress}-${selector}-${whereAddress}`;
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const id = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
 
-  const existing = await context.SelectorPermission.get(id);
-  if (existing) {
-    context.SelectorPermission.set({ ...existing, allowed: false });
-  }
+  // Append-only — create new record with allowed: false
+  context.SelectorPermission.set({
+    id,
+    chainId,
+    conditionAddress,
+    selector: event.params.selector,
+    whereAddress: event.params.where,
+    allowed: false,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+  });
 });
 
 ExecuteSelectorCondition.NativeTransfersAllowed.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const conditionAddress = event.srcAddress;
-  const whereAddress = event.params.where;
-  const id = `${chainId}-${conditionAddress}-native-${whereAddress}`;
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const id = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
 
   context.NativeTransferPermission.set({
     id,
     chainId,
     conditionAddress,
-    whereAddress,
+    whereAddress: event.params.where,
     allowed: true,
     blockNumber: event.block.number,
     transactionHash: event.transaction.hash,
@@ -52,11 +58,17 @@ ExecuteSelectorCondition.NativeTransfersAllowed.handler(async ({ event, context 
 ExecuteSelectorCondition.NativeTransfersDisallowed.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const conditionAddress = event.srcAddress;
-  const whereAddress = event.params.where;
-  const id = `${chainId}-${conditionAddress}-native-${whereAddress}`;
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const id = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
 
-  const existing = await context.NativeTransferPermission.get(id);
-  if (existing) {
-    context.NativeTransferPermission.set({ ...existing, allowed: false });
-  }
+  // Append-only — create new record with allowed: false
+  context.NativeTransferPermission.set({
+    id,
+    chainId,
+    conditionAddress,
+    whereAddress: event.params.where,
+    allowed: false,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+  });
 });

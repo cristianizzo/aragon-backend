@@ -1,19 +1,6 @@
 import { createEffect, S } from "envio";
 import { ipfsConfig } from "../config";
-
-export interface IpfsMetadata {
-  name?: string;
-  description?: string;
-  avatar?: string;
-  links?: Array<{ name: string; url: string }>;
-}
-
-export interface ProposalMetadata {
-  title?: string;
-  summary?: string;
-  description?: string;
-  resources?: Array<{ name: string; url: string }>;
-}
+import { parseDaoMetadata, parseProposalMetadata } from "../utils/metadata";
 
 async function fetchFromIpfs(cid: string): Promise<unknown | null> {
   for (const gateway of ipfsConfig.gateways) {
@@ -42,6 +29,11 @@ export const fetchDaoMetadata = createEffect(
         description: S.optional(S.string),
         avatar: S.optional(S.string),
         linksJson: S.optional(S.string),
+        processKey: S.optional(S.string),
+        stageNamesJson: S.optional(S.string),
+        blockedCountriesJson: S.optional(S.string),
+        termsConditionsUrl: S.optional(S.string),
+        enableOfacCheck: S.optional(S.boolean),
       }),
       null,
     ]),
@@ -50,14 +42,9 @@ export const fetchDaoMetadata = createEffect(
   },
   async ({ input: cid }) => {
     if (!cid) return null;
-    const data = (await fetchFromIpfs(cid)) as IpfsMetadata | null;
-    if (!data) return null;
-    return {
-      name: data.name,
-      description: data.description,
-      avatar: data.avatar,
-      linksJson: data.links ? JSON.stringify(data.links) : undefined,
-    };
+    const raw = await fetchFromIpfs(cid);
+    if (!raw || typeof raw !== "object") return null;
+    return parseDaoMetadata(raw as Record<string, unknown>);
   },
 );
 
@@ -79,13 +66,8 @@ export const fetchProposalMetadata = createEffect(
   },
   async ({ input: cid }) => {
     if (!cid) return null;
-    const data = (await fetchFromIpfs(cid)) as ProposalMetadata | null;
-    if (!data) return null;
-    return {
-      title: data.title,
-      summary: data.summary,
-      description: data.description,
-      resourcesJson: data.resources ? JSON.stringify(data.resources) : undefined,
-    };
+    const raw = await fetchFromIpfs(cid);
+    if (!raw || typeof raw !== "object") return null;
+    return parseProposalMetadata(raw as Record<string, unknown>);
   },
 );

@@ -1,16 +1,17 @@
 import { CapitalDistributor } from "generated";
+import { campaignId as makeCampaignId } from "../utils/ids";
 
 CapitalDistributor.CampaignCreated.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const campaignId = event.params.campaignId.toString();
-  const id = `${chainId}-${pluginAddress}-${campaignId}`;
+  const campaignIndex = event.params.campaignId.toString();
+  const id = makeCampaignId({ chainId, pluginAddress, campaignId: campaignIndex });
 
   context.Campaign.set({
     id,
     chainId,
     pluginAddress,
-    campaignId,
+    campaignId: campaignIndex,
     metadataUri: event.params.metadataUri || undefined,
     token: event.params.token || undefined,
     startTime: event.params.startTime,
@@ -26,8 +27,8 @@ CapitalDistributor.CampaignCreated.handler(async ({ event, context }) => {
 CapitalDistributor.MerkleCampaignSet.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const campaignId = event.params.campaignId.toString();
-  const id = `${chainId}-${pluginAddress}-${campaignId}`;
+  const campaignIndex = event.params.campaignId.toString();
+  const id = makeCampaignId({ chainId, pluginAddress, campaignId: campaignIndex });
 
   const campaign = await context.Campaign.get(id);
   if (campaign) {
@@ -41,8 +42,8 @@ CapitalDistributor.MerkleCampaignSet.handler(async ({ event, context }) => {
 CapitalDistributor.MerkleCampaignUpdated.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const campaignId = event.params.campaignId.toString();
-  const id = `${chainId}-${pluginAddress}-${campaignId}`;
+  const campaignIndex = event.params.campaignId.toString();
+  const id = makeCampaignId({ chainId, pluginAddress, campaignId: campaignIndex });
 
   const campaign = await context.Campaign.get(id);
   if (campaign) {
@@ -56,8 +57,8 @@ CapitalDistributor.MerkleCampaignUpdated.handler(async ({ event, context }) => {
 CapitalDistributor.CampaignPaused.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const campaignId = event.params.campaignId.toString();
-  const id = `${chainId}-${pluginAddress}-${campaignId}`;
+  const campaignIndex = event.params.campaignId.toString();
+  const id = makeCampaignId({ chainId, pluginAddress, campaignId: campaignIndex });
 
   const campaign = await context.Campaign.get(id);
   if (campaign) {
@@ -68,8 +69,8 @@ CapitalDistributor.CampaignPaused.handler(async ({ event, context }) => {
 CapitalDistributor.CampaignResumed.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const campaignId = event.params.campaignId.toString();
-  const id = `${chainId}-${pluginAddress}-${campaignId}`;
+  const campaignIndex = event.params.campaignId.toString();
+  const id = makeCampaignId({ chainId, pluginAddress, campaignId: campaignIndex });
 
   const campaign = await context.Campaign.get(id);
   if (campaign) {
@@ -80,8 +81,8 @@ CapitalDistributor.CampaignResumed.handler(async ({ event, context }) => {
 CapitalDistributor.CampaignEnded.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const campaignId = event.params.campaignId.toString();
-  const id = `${chainId}-${pluginAddress}-${campaignId}`;
+  const campaignIndex = event.params.campaignId.toString();
+  const id = makeCampaignId({ chainId, pluginAddress, campaignId: campaignIndex });
 
   const campaign = await context.Campaign.get(id);
   if (campaign) {

@@ -19,6 +19,7 @@ enum PluginInterfaceType {
 enum PluginStatus {
   preInstall
   installed
+  deprecated
   updated
   uninstalled
   abandoned
@@ -58,6 +59,11 @@ type Dao {
   description: String
   avatar: String
   links: Json
+  processKey: String
+  stageNames: Json
+  blockedCountries: Json
+  termsConditionsUrl: String
+  enableOfacCheck: Boolean
   proposalCount: Int!
   proposalsExecuted: Int!
   uniqueVoters: Int!
@@ -89,6 +95,7 @@ type Plugin {
   blockNumber: Int!
   blockTimestamp: Int
   transactionHash: String!
+  implementationAddress: String
   pluginSetupRepo: String
   release: Int
   build: Int
@@ -96,9 +103,16 @@ type Plugin {
   tokenAddress: String
   votingEscrow: Json
   conditionAddress: String
+  proposalCreationConditionAddress: String
   lockManagerAddress: String
   permissions: Json
   subPlugins: Json
+  totalStages: Int
+  parentPlugin: String
+  stageIndex: Int
+  isSubPlugin: Boolean!
+  isBody: Boolean!
+  isProcess: Boolean!
   settings: [PluginSetting!]! @derivedFrom(field: "plugin")
   proposals: [Proposal!]! @derivedFrom(field: "plugin")
   votes: [Vote!]! @derivedFrom(field: "plugin")
@@ -111,6 +125,7 @@ type PluginSetupLog {
   event: String! @index
   blockNumber: Int!
   transactionHash: String!
+  txIndex: Int!
   logIndex: Int!
   daoAddress: String! @index
   pluginAddress: String! @index
@@ -130,6 +145,7 @@ type DaoPermission {
   daoAddress: String! @index
   blockNumber: Int!
   transactionHash: String!
+  txIndex: Int!
   logIndex: Int!
   permissionId: String! @index
   whoAddress: String! @index
@@ -208,6 +224,7 @@ type Vote {
   memberAddress: String! @index
   voteOption: Int
   votingPower: BigInt
+  replacedBy: String
 }
 
 # ==============================
@@ -255,6 +272,9 @@ type Token {
   name: String
   symbol: String
   decimals: Int
+  type: String
+  isGovernance: Boolean!
+  totalSupply: BigInt
 }
 
 type DelegateChangedEvent {
@@ -397,4 +417,39 @@ type NativeTransferPermission {
   allowed: Boolean!
   blockNumber: Int!
   transactionHash: String!
+}
+
+# ==============================
+# DAO Transfers (Phase 1: native only)
+# ==============================
+
+enum TransferType {
+  Native
+  ERC20
+  ERC721
+}
+
+enum TransferSide {
+  Deposit
+  Withdraw
+}
+
+type Transfer {
+  id: ID!
+  chainId: Int!
+  dao: Dao! @index
+  daoAddress: String! @index
+  type: TransferType!
+  side: TransferSide!
+  fromAddress: String! @index
+  toAddress: String! @index
+  value: BigInt!
+  tokenAddress: String @index
+  tokenId: String
+  actionIndex: Int
+  blockNumber: Int!
+  blockTimestamp: Int
+  transactionHash: String!
+  txIndex: Int!
+  logIndex: Int!
 }

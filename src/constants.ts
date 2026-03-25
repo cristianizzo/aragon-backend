@@ -13,14 +13,17 @@ export enum VoteOption {
   No = 3,
 }
 
-export function safeJsonParse(value: string | undefined | null): any {
-  if (!value) return undefined;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-}
+// DAO upgrade detection
+export const UPGRADE_TO_AND_CALL_SELECTOR = "0x4f1ef286";
+
+// EIP-1967 implementation storage slot
+export const EIP1967_IMPLEMENTATION_SLOT =
+  "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc" as const;
+
+// DAO protocol version ABI
+export const PROTOCOL_VERSION_ABI = parseAbi([
+  "function protocolVersion() view returns (uint8 major, uint8 minor, uint8 patch)",
+]);
 
 // Shared ABIs for VE contract discovery
 export const ESCROW_ABI = parseAbi(["function escrow() view returns (address)"]);
@@ -28,8 +31,12 @@ export const QUEUE_ABI = parseAbi(["function queue() view returns (address)"]);
 export const LOCK_NFT_ABI = parseAbi(["function lockNFT() view returns (address)"]);
 export const TOKEN_ABI = parseAbi(["function token() view returns (address)"]);
 export const LOCK_MANAGER_ABI = parseAbi(["function lockManager() view returns (address)"]);
+export const CURVE_ABI = parseAbi(["function curve() view returns (address)"]);
+export const CLOCK_ABI = parseAbi(["function clock() view returns (address)"]);
+
 export const ERC20_METADATA_ABI = parseAbi([
   "function name() view returns (string)",
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
+  "function totalSupply() view returns (uint256)",
 ]);

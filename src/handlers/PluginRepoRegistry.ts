@@ -1,8 +1,10 @@
 import { PluginRepoRegistry } from "generated";
+import { pluginRepoId } from "../utils/ids";
 
 PluginRepoRegistry.PluginRepoRegistered.handler(async ({ event, context }) => {
   const chainId = event.chainId;
-  const id = `${chainId}-${event.params.pluginRepo}`;
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const id = pluginRepoId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
 
   const existing = await context.PluginRepo.get(id);
   if (existing) return;

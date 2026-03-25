@@ -5,6 +5,7 @@ description: Aragon DAO Protocol Indexer
 field_selection:
   transaction_fields:
     - hash
+    - transactionIndex
     - from
     - to
 
@@ -75,6 +76,7 @@ contracts:
         name: SPPProposalExecuted
       - event: MetadataSet(bytes metadata)
         name: SPPMetadataSet
+      - event: "StagesUpdated(((address, bool, bool, uint8)[], uint64, uint64, uint64, uint16, uint16, bool, bool)[] stages)"
 
   # =============================================
   # Phase 3: Governance Token Contracts (factory-registered)

@@ -1,16 +1,17 @@
 import { TokenVoting } from "generated";
-import { safeJsonParse } from "../constants";
 import { decodeProposalActions } from "../effects/decodeActions";
 import { fetchProposalMetadata } from "../effects/ipfs";
-import { extractIpfsCid } from "../utils/metadata";
+import { eventId, pluginMemberId, proposalId as makeProposalId } from "../utils/ids";
+import { extractIpfsCid, parseRawActions, safeJsonParse } from "../utils/metadata";
 import { trackPluginActivity } from "../utils/metrics";
 
 TokenVoting.VotingSettingsUpdated.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const pluginId = `${chainId}-${pluginAddress}`;
 
-  const plugin = await context.Plugin.get(pluginId);
+  // Find active plugin by address
+  const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
   if (!plugin) return;
 
   // Update plugin interface type if still unknown
@@ -18,11 +19,12 @@ TokenVoting.VotingSettingsUpdated.handler(async ({ event, context }) => {
     context.Plugin.set({ ...plugin, interfaceType: "tokenVoting", isSupported: true });
   }
 
-  const settingId = `${chainId}-${pluginAddress}-${event.transaction.hash}`;
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const settingId = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
   context.PluginSetting.set({
     id: settingId,
     chainId,
-    plugin_id: pluginId,
+    plugin_id: plugin.id,
     pluginAddress,
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
@@ -42,21 +44,18 @@ TokenVoting.VotingSettingsUpdated.handler(async ({ event, context }) => {
 TokenVoting.TokenVotingProposalCreated.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const pluginId = `${chainId}-${pluginAddress}`;
   const proposalIndex = event.params.proposalId.toString();
 
-  const plugin = await context.Plugin.get(pluginId);
+  // Find active plugin by address
+  const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
   if (!plugin) return;
 
   const cid = extractIpfsCid(event.params.metadata);
   const metadata = cid ? await context.effect(fetchProposalMetadata, cid) : null;
 
   // Extract and decode proposal actions
-  const rawActions = event.params.actions.map((a: any) => ({
-    to: String(a[0] ?? a.to ?? ""),
-    value: String(a[1] ?? a.value ?? "0"),
-    data: String(a[2] ?? a.data ?? "0x"),
-  }));
+  const rawActions = parseRawActions(event.params.actions);
 
   const decodedActions =
     rawActions.length > 0
@@ -67,12 +66,12 @@ TokenVoting.TokenVotingProposalCreated.handler(async ({ event, context }) => {
         })
       : null;
 
-  const proposalId = `${chainId}-${pluginAddress}-${proposalIndex}`;
+  const propId = makeProposalId({ chainId, txHash: event.transaction.hash, pluginAddress, proposalIndex });
   context.Proposal.set({
-    id: proposalId,
+    id: propId,
     chainId,
     dao_id: plugin.dao_id,
-    plugin_id: pluginId,
+    plugin_id: plugin.id,
     daoAddress: plugin.daoAddress,
     pluginAddress,
     proposalIndex,
@@ -102,7 +101,7 @@ TokenVoting.TokenVotingProposalCreated.handler(async ({ event, context }) => {
     context.Dao.set({ ...dao, proposalCount: dao.proposalCount + 1 });
     await trackPluginActivity(context, {
       chainId,
-      pluginId,
+      pluginId: plugin.id,
       pluginAddress,
       memberAddress: event.params.creator,
       daoAddress: plugin.daoAddress,
@@ -116,9 +115,10 @@ TokenVoting.TokenVotingProposalExecuted.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
   const proposalIndex = event.params.proposalId.toString();
-  const proposalId = `${chainId}-${pluginAddress}-${proposalIndex}`;
 
-  const proposal = await context.Proposal.get(proposalId);
+  // Find proposal by pluginAddress + proposalIndex (we don't have creation txHash)
+  const proposals = await context.Proposal.getWhere({ pluginAddress: { _eq: pluginAddress }, proposalIndex: { _eq: proposalIndex } });
+  const proposal = proposals.find((p: any) => p.chainId === chainId);
   if (!proposal) return;
 
   context.Proposal.set({
@@ -138,19 +138,24 @@ TokenVoting.TokenVotingProposalExecuted.handler(async ({ event, context }) => {
 TokenVoting.VoteCast.handler(async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = event.srcAddress;
-  const pluginId = `${chainId}-${pluginAddress}`;
   const proposalIndex = event.params.proposalId.toString();
-  const proposalId = `${chainId}-${pluginAddress}-${proposalIndex}`;
 
-  const plugin = await context.Plugin.get(pluginId);
+  // Find active plugin by address
+  const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
   if (!plugin) return;
 
-  const voteId = `${chainId}-${pluginAddress}-${proposalIndex}-${event.params.voter}`;
+  // Find proposal by pluginAddress + proposalIndex
+  const proposals = await context.Proposal.getWhere({ pluginAddress: { _eq: pluginAddress }, proposalIndex: { _eq: proposalIndex } });
+  const proposal = proposals.find((p: any) => p.chainId === chainId);
+
+  const txIndex = Number(event.transaction.transactionIndex ?? 0);
+  const vId = eventId({ chainId, txHash: event.transaction.hash, txIndex, logIndex: event.logIndex });
   context.Vote.set({
-    id: voteId,
+    id: vId,
     chainId,
-    plugin_id: pluginId,
-    proposal_id: proposalId,
+    plugin_id: plugin.id,
+    proposal_id: proposal?.id ?? "",
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
@@ -160,10 +165,10 @@ TokenVoting.VoteCast.handler(async ({ event, context }) => {
     memberAddress: event.params.voter,
     voteOption: Number(event.params.voteOption),
     votingPower: event.params.votingPower,
+    replacedBy: undefined,
   });
 
   // Update vote count + DAO metrics
-  const proposal = await context.Proposal.get(proposalId);
   if (proposal) {
     context.Proposal.set({ ...proposal, voteCount: proposal.voteCount + 1 });
   }
@@ -173,7 +178,7 @@ TokenVoting.VoteCast.handler(async ({ event, context }) => {
   }
   await trackPluginActivity(context, {
     chainId,
-    pluginId,
+    pluginId: plugin.id,
     pluginAddress,
     memberAddress: event.params.voter,
     daoAddress: plugin.daoAddress,

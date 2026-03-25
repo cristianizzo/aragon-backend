@@ -3,6 +3,8 @@
  * Called from proposal, vote, and member handlers.
  */
 
+import { pluginActivityMetricId } from "./ids";
+
 type Context = {
   Dao: { get: (id: string) => Promise<any>; set: (e: any) => void };
   PluginActivityMetric: {
@@ -54,7 +56,11 @@ export async function trackPluginActivity(
     type: "vote" | "proposal";
   },
 ) {
-  const id = `${params.chainId}-${params.pluginAddress}-${params.memberAddress}`;
+  const id = pluginActivityMetricId({
+    chainId: params.chainId,
+    pluginAddress: params.pluginAddress,
+    memberAddress: params.memberAddress,
+  });
   const existing = await context.PluginActivityMetric.get(id);
 
   if (existing) {
