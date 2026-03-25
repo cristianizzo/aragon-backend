@@ -1,4 +1,5 @@
 import { LockToVote } from "generated";
+import { PluginStatus, ProposalStatus } from "../constants";
 import { decodeProposalActions } from "../effects/decodeActions";
 import { fetchProposalMetadata } from "../effects/ipfs";
 import { eventId, proposalId as makeProposalId } from "../utils/ids";
@@ -12,7 +13,7 @@ LockToVote.LockToVoteVoteCast.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   // Find proposal by pluginAddress + proposalIndex
@@ -78,7 +79,7 @@ LockToVote.LockToVoteProposalCreated.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   if (plugin.interfaceType === "unknown") {
@@ -120,7 +121,7 @@ LockToVote.LockToVoteProposalCreated.handler(async ({ event, context }) => {
     resources: safeJsonParse(metadata?.resourcesJson),
     rawActions: rawActions.length > 0 ? rawActions : undefined,
     decodedActions: decodedActions ?? undefined,
-    status: "Active",
+    status: ProposalStatus.Active,
     startDate: event.params.startDate,
     endDate: event.params.endDate,
     executed: false,
@@ -156,7 +157,7 @@ LockToVote.LockToVoteProposalExecuted.handler(async ({ event, context }) => {
 
   context.Proposal.set({
     ...proposal,
-    status: "Executed",
+    status: ProposalStatus.Executed,
     executed: true,
     executedAt: event.block.timestamp,
     executedTxHash: event.transaction.hash,
@@ -174,7 +175,7 @@ LockToVote.LockToVoteSettingsUpdated.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   if (plugin.interfaceType === "unknown") {

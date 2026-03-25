@@ -1,6 +1,6 @@
 import { PluginSetupProcessor } from "generated";
 import { fetchDaoInfo, fetchTokenMetadata, discoverVotingEscrow } from "../effects/rpc";
-import { EIP1967_IMPLEMENTATION_SLOT } from "../constants";
+import { EIP1967_IMPLEMENTATION_SLOT, PluginStatus, TokenType } from "../constants";
 import { detectPluginByBytecode } from "../utils/bytecodeDetector";
 import { daoId as makeDaoId, eventId, pluginId as makePluginId, tokenId as makeTokenId } from "../utils/ids";
 import { getPluginTypeFromRepo } from "../utils/pluginRepos";
@@ -291,7 +291,7 @@ PluginSetupProcessor.InstallationPrepared.handler(async ({ event, context }) => 
     dao_id: dId,
     daoAddress,
     interfaceType,
-    status: "preInstall",
+    status: PluginStatus.PreInstall,
     isSupported,
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
@@ -330,7 +330,7 @@ PluginSetupProcessor.InstallationPrepared.handler(async ({ event, context }) => 
         symbol: metadata?.symbol,
         decimals: metadata?.decimals,
         totalSupply: metadata?.totalSupply,
-        type: "ERC20",
+        type: TokenType.ERC20,
         isGovernance: true,
       });
     }
@@ -370,11 +370,11 @@ PluginSetupProcessor.InstallationApplied.handler(async ({ event, context }) => {
 
   // Update plugin status to installed — find by address since Plugin ID now includes txHash
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "preInstall");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.PreInstall);
   if (plugin) {
     context.Plugin.set({
       ...plugin,
-      status: "installed",
+      status: PluginStatus.Installed,
     });
   }
 });
@@ -436,12 +436,12 @@ PluginSetupProcessor.UpdateApplied.handler(async ({ event, context }) => {
 
   // Find existing installed plugin by address, mark as deprecated, create new versioned plugin
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const oldPlugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const oldPlugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (oldPlugin) {
     // Mark old plugin as deprecated
     context.Plugin.set({
       ...oldPlugin,
-      status: "deprecated",
+      status: PluginStatus.Deprecated,
     });
 
     // Create new plugin record with new txHash-based ID, inheriting key fields
@@ -449,7 +449,7 @@ PluginSetupProcessor.UpdateApplied.handler(async ({ event, context }) => {
     context.Plugin.set({
       ...oldPlugin,
       id: newPId,
-      status: "installed",
+      status: PluginStatus.Installed,
       blockNumber: event.block.number,
       blockTimestamp: event.block.timestamp,
       transactionHash: event.transaction.hash,
@@ -510,11 +510,11 @@ PluginSetupProcessor.UninstallationApplied.handler(async ({ event, context }) =>
 
   // Find installed plugin by address, mark as uninstalled
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (plugin) {
     context.Plugin.set({
       ...plugin,
-      status: "uninstalled",
+      status: PluginStatus.Uninstalled,
       isSupported: false,
     });
   }

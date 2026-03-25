@@ -13,6 +13,15 @@ export enum VoteOption {
   No = 3,
 }
 
+// Schema enum values — avoid hardcoded strings in handlers
+export const TransferType = { Native: "Native", ERC20: "ERC20", ERC721: "ERC721" } as const;
+export const TransferSide = { Deposit: "Deposit", Withdraw: "Withdraw" } as const;
+export const PermissionEvent = { Granted: "Granted", Revoked: "Revoked" } as const;
+export const ProposalStatus = { Active: "Active", Succeeded: "Succeeded", Defeated: "Defeated", Executed: "Executed", Canceled: "Canceled" } as const;
+export const PluginStatus = { PreInstall: "preInstall", Installed: "installed", Deprecated: "deprecated", Updated: "updated", Uninstalled: "uninstalled", Abandoned: "abandoned" } as const;
+export const GaugeStatus = { Active: "Active", Deactivated: "Deactivated" } as const;
+export const TokenType = { ERC20: "ERC20", ERC721: "ERC721" } as const;
+
 // DAO upgrade detection
 export const UPGRADE_TO_AND_CALL_SELECTOR = "0x4f1ef286";
 

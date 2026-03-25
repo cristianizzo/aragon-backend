@@ -1,4 +1,5 @@
 import { StagedProposalProcessor } from "generated";
+import { PluginStatus, ProposalStatus } from "../constants";
 import { decodeProposalActions } from "../effects/decodeActions";
 import { fetchDaoMetadata, fetchProposalMetadata } from "../effects/ipfs";
 import { eventId, proposalId as makeProposalId } from "../utils/ids";
@@ -22,7 +23,7 @@ StagedProposalProcessor.ProposalCanceled.handler(async ({ event, context }) => {
 
   context.Proposal.set({
     ...proposal,
-    status: "Canceled",
+    status: ProposalStatus.Canceled,
   });
 });
 
@@ -61,7 +62,7 @@ StagedProposalProcessor.SPPProposalCreated.handler(async ({ event, context }) =>
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   // Update plugin type if unknown
@@ -104,7 +105,7 @@ StagedProposalProcessor.SPPProposalCreated.handler(async ({ event, context }) =>
     resources: safeJsonParse(metadata?.resourcesJson),
     rawActions: rawActions.length > 0 ? rawActions : undefined,
     decodedActions: decodedActions ?? undefined,
-    status: "Active",
+    status: ProposalStatus.Active,
     startDate: event.params.startDate,
     endDate: event.params.endDate,
     executed: false,
@@ -141,7 +142,7 @@ StagedProposalProcessor.SPPProposalExecuted.handler(async ({ event, context }) =
 
   context.Proposal.set({
     ...proposal,
-    status: "Executed",
+    status: ProposalStatus.Executed,
     executed: true,
     executedAt: event.block.timestamp,
     executedTxHash: event.transaction.hash,
@@ -162,7 +163,7 @@ StagedProposalProcessor.StagesUpdated.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   const stages = parseStages(event.params.stages);
@@ -206,7 +207,7 @@ StagedProposalProcessor.StagesUpdated.handler(async ({ event, context }) => {
   for (const stage of stages) {
     for (const body of stage.bodies) {
       const subPlugins = await context.Plugin.getWhere({ address: { _eq: body.address } });
-      const subPlugin = subPlugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+      const subPlugin = subPlugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
       if (subPlugin) {
         context.Plugin.set({
           ...subPlugin,
@@ -227,7 +228,7 @@ StagedProposalProcessor.SPPMetadataSet.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   const cid = extractIpfsCid(event.params.metadata);

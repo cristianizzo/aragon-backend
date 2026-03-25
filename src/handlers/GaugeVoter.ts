@@ -1,4 +1,5 @@
 import { GaugeVoter } from "generated";
+import { GaugeStatus } from "../constants";
 import { eventId, gaugeId as makeGaugeId } from "../utils/ids";
 
 GaugeVoter.GaugeCreated.handler(async ({ event, context }) => {
@@ -14,7 +15,7 @@ GaugeVoter.GaugeCreated.handler(async ({ event, context }) => {
     pluginAddress,
     creatorAddress: event.params.creator,
     metadataUri: event.params.metadataURI || undefined,
-    status: "Active",
+    status: GaugeStatus.Active,
     blockNumber: event.block.number,
     transactionHash: event.transaction.hash,
   });
@@ -26,7 +27,7 @@ GaugeVoter.GaugeActivated.handler(async ({ event, context }) => {
   const id = makeGaugeId({ chainId, pluginAddress, gaugeAddress: event.params.gauge });
   const gauge = await context.Gauge.get(id);
   if (gauge) {
-    context.Gauge.set({ ...gauge, status: "Active" });
+    context.Gauge.set({ ...gauge, status: GaugeStatus.Active });
   }
 });
 
@@ -36,7 +37,7 @@ GaugeVoter.GaugeDeactivated.handler(async ({ event, context }) => {
   const id = makeGaugeId({ chainId, pluginAddress, gaugeAddress: event.params.gauge });
   const gauge = await context.Gauge.get(id);
   if (gauge) {
-    context.Gauge.set({ ...gauge, status: "Deactivated" });
+    context.Gauge.set({ ...gauge, status: GaugeStatus.Deactivated });
   }
 });
 

@@ -1,5 +1,5 @@
 import { DAO } from "generated";
-import { UPGRADE_TO_AND_CALL_SELECTOR, ZERO_ADDRESS } from "../constants";
+import { PermissionEvent, TransferSide, TransferType, UPGRADE_TO_AND_CALL_SELECTOR, ZERO_ADDRESS } from "../constants";
 import { fetchDaoInfo } from "../effects/rpc";
 import { fetchDaoMetadata } from "../effects/ipfs";
 import { daoId as makeDaoId, eventId, transferId } from "../utils/ids";
@@ -58,8 +58,8 @@ DAO.NativeTokenDeposited.handler(async ({ event, context }) => {
     chainId,
     dao_id: daoId,
     daoAddress,
-    type: "Native",
-    side: "Deposit",
+    type: TransferType.Native,
+    side: TransferSide.Deposit,
     fromAddress: event.params.sender,
     toAddress: daoAddress,
     value: event.params.amount,
@@ -105,7 +105,7 @@ DAO.Granted.handler(async ({ event, context }) => {
     permissionId: event.params.permissionId,
     whoAddress: event.params.who,
     whereAddress: event.params.where,
-    event: "Granted",
+    event: PermissionEvent.Granted,
     conditionAddress: event.params.condition || undefined,
   });
 });
@@ -133,7 +133,7 @@ DAO.Revoked.handler(async ({ event, context }) => {
     permissionId: event.params.permissionId,
     whoAddress: event.params.who,
     whereAddress: event.params.where,
-    event: "Revoked",
+    event: PermissionEvent.Revoked,
     conditionAddress: undefined,
   });
 });
@@ -170,8 +170,8 @@ DAO.Executed.handler(async ({ event, context }) => {
         chainId,
         dao_id: daoId,
         daoAddress,
-        type: "Native",
-        side: "Withdraw",
+        type: TransferType.Native,
+        side: TransferSide.Withdraw,
         fromAddress: daoAddress,
         toAddress: to,
         value,

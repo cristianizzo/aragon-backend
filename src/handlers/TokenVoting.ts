@@ -1,4 +1,5 @@
 import { TokenVoting } from "generated";
+import { PluginStatus, ProposalStatus } from "../constants";
 import { decodeProposalActions } from "../effects/decodeActions";
 import { fetchProposalMetadata } from "../effects/ipfs";
 import { eventId, pluginMemberId, proposalId as makeProposalId } from "../utils/ids";
@@ -11,7 +12,7 @@ TokenVoting.VotingSettingsUpdated.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   // Update plugin interface type if still unknown
@@ -48,7 +49,7 @@ TokenVoting.TokenVotingProposalCreated.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   const cid = extractIpfsCid(event.params.metadata);
@@ -86,7 +87,7 @@ TokenVoting.TokenVotingProposalCreated.handler(async ({ event, context }) => {
     resources: safeJsonParse(metadata?.resourcesJson),
     rawActions: rawActions.length > 0 ? rawActions : undefined,
     decodedActions: decodedActions ?? undefined,
-    status: "Active",
+    status: ProposalStatus.Active,
     startDate: event.params.startDate,
     endDate: event.params.endDate,
     executed: false,
@@ -123,7 +124,7 @@ TokenVoting.TokenVotingProposalExecuted.handler(async ({ event, context }) => {
 
   context.Proposal.set({
     ...proposal,
-    status: "Executed",
+    status: ProposalStatus.Executed,
     executed: true,
     executedAt: event.block.timestamp,
     executedTxHash: event.transaction.hash,
@@ -142,7 +143,7 @@ TokenVoting.VoteCast.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   // Find proposal by pluginAddress + proposalIndex

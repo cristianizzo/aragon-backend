@@ -1,5 +1,5 @@
 import { Multisig } from "generated";
-import { VoteOption } from "../constants";
+import { PluginStatus, ProposalStatus, VoteOption } from "../constants";
 import { decodeProposalActions } from "../effects/decodeActions";
 import { fetchProposalMetadata } from "../effects/ipfs";
 import { eventId, pluginMemberId, proposalId as makeProposalId } from "../utils/ids";
@@ -12,7 +12,7 @@ Multisig.MultisigSettingsUpdated.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   // Update plugin interface type if still unknown
@@ -48,7 +48,7 @@ Multisig.MembersAdded.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   for (const member of event.params.members) {
@@ -79,7 +79,7 @@ Multisig.MembersRemoved.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   for (const member of event.params.members) {
@@ -104,7 +104,7 @@ Multisig.MultisigProposalCreated.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   const cid = extractIpfsCid(event.params.metadata);
@@ -142,7 +142,7 @@ Multisig.MultisigProposalCreated.handler(async ({ event, context }) => {
     resources: safeJsonParse(metadata?.resourcesJson),
     rawActions: rawActions.length > 0 ? rawActions : undefined,
     decodedActions: decodedActions ?? undefined,
-    status: "Active",
+    status: ProposalStatus.Active,
     startDate: event.params.startDate,
     endDate: event.params.endDate,
     executed: false,
@@ -179,7 +179,7 @@ Multisig.MultisigProposalExecuted.handler(async ({ event, context }) => {
 
   context.Proposal.set({
     ...proposal,
-    status: "Executed",
+    status: ProposalStatus.Executed,
     executed: true,
     executedAt: event.block.timestamp,
     executedTxHash: event.transaction.hash,
@@ -198,7 +198,7 @@ Multisig.Approved.handler(async ({ event, context }) => {
 
   // Find active plugin by address
   const plugins = await context.Plugin.getWhere({ address: { _eq: pluginAddress } });
-  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === "installed");
+  const plugin = plugins.find((p: any) => p.chainId === chainId && p.status === PluginStatus.Installed);
   if (!plugin) return;
 
   // Find proposal by pluginAddress + proposalIndex
