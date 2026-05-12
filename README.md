@@ -21,6 +21,25 @@ indexer service, with full field-level parity across every governance type (Mult
 Admin, LockToVote, VE / Gauge, Staged Proposal Processor, Capital Distributor) and per-chain
 provider routing for explorers, RPC nodes, and rate limiting.
 
+## Project structure
+
+The indexer follows a layered architecture so every flow has one obvious home:
+
+```
+src/
+├── handlers/    # Event entry points — one file per contract; thin glue
+├── services/    # DB-write orchestrators — every Entity.set lives here
+├── effects/     # External I/O wrapped in `createEffect` (cached + throttled)
+├── helpers/     # Transport: viem clients, IPFS fetch, explorers, rate limiter
+├── utils/       # Pure parse / validate / id-generation
+├── abis/        # Hand-curated ABI fragments for receipt-log decoding
+├── config/      # Env-driven config (URLs, API keys, RPC routing)
+└── types/       # Module typings for untyped deps
+```
+
+Per-chain explorer routing (Etherscan / Routescan / ZkSync / Blockscout / Subscan) lives in
+`src/helpers/explorers/`. Per-provider Bottleneck rate limiters live in `src/helpers/rateLimiter.ts`.
+
 ## Prerequisites
 
 - [Node.js v22+ (v24 recommended)](https://nodejs.org/en/download/current) — pinned by `engines.node` in `package.json`
@@ -45,15 +64,22 @@ pnpm install
 
 #### Environment
 
-Copy `.env.example` to `.env` and fill in the API keys you need. The most impactful are:
+Copy `.env.example` to `.env` and fill in the API keys you need. **Every env var the indexer reads
+uses the `ENVIO_` prefix** — Envio's Hosted Service only forwards env vars with that prefix to the
+running indexer, so anything else is silently dropped in production. Keep the prefix locally too
+for a single naming convention.
+
+The most impactful keys:
 
 | Var | Purpose |
 |---|---|
-| `NODES_DRPC_API_KEY` | RPC provider (preferred) |
-| `NODES_ALCHEMY_API_KEY` | RPC fallback |
-| `ETHERSCAN_API_KEY` | Action-decoder source-code lookup (Etherscan v2 multi-chain) |
-| `ENVIO_IPFS_GATEWAY_URL` / `PINATA_GATEWAY_URI` | IPFS metadata gateways (optional) |
-| `SUBSCAN_API_KEY` | Required only when indexing Peaq |
+| `ENVIO_API_TOKEN` | HyperSync access — required for Envio cloud + CI |
+| `ENVIO_NODES_DRPC_API_KEY` | RPC provider (preferred) |
+| `ENVIO_NODES_ALCHEMY_API_KEY` | RPC fallback |
+| `ENVIO_ETHERSCAN_API_KEY` | Action-decoder source-code lookup (Etherscan v2 multi-chain) |
+| `ENVIO_IPFS_GATEWAY_URL` / `ENVIO_PINATA_GATEWAY_URI` | IPFS metadata gateways (optional) |
+| `ENVIO_SUBSCAN_API_KEY` | Required only when indexing Peaq |
+| `ENVIO_RPC_URL_<chainId>` | Per-chain override that beats DRPC/Alchemy/public defaults |
 
 Without RPC and Etherscan keys the indexer still runs but will rate-limit hard against public
 endpoints and lose ABI-based action decoding.
@@ -126,8 +152,10 @@ pnpm test
 
 The indexer auto-deploys to [Envio Hosted Service](https://envio.dev) on every push to the
 configured active branch (currently `main` on the official `aragon/aragon-indexer` repo).
-Configure environment variables in the Envio dashboard before triggering the first deploy
-(see the **Environment** section above for the required keys).
+The indexer boots without any env vars configured — it falls back to public RPCs and IPFS
+gateways. For production-grade throughput add the `ENVIO_*` keys from the **Environment**
+section in **Envio dashboard → Settings → Environment Variables**. Only `ENVIO_API_TOKEN`
+is required if you want HyperSync's higher-tier throughput.
 
 ## Contributing
 
@@ -158,4 +186,5 @@ For Envio HyperIndex documentation see [docs.envio.dev](https://docs.envio.dev).
 
 ## License
 
-[GNU AGPLv3](./LICENSE)
+GNU AGPLv3 — see the [Aragon license repository](https://github.com/aragon/app-backend/blob/development/LICENSE.md)
+for the canonical text the rest of the org uses.
