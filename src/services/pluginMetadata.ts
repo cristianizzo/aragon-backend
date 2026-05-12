@@ -2,7 +2,7 @@ import type { HandlerContext } from "generated";
 import { getAddress } from "viem";
 import { fetchIpfsJson } from "../effects/ipfs";
 import logger from "../helpers/logger";
-import { eventLogId, pluginId } from "../ids";
+import { eventLogId, pluginId } from "../utils/ids";
 import { extractIpfsCid, parsePluginMetadata } from "../utils/metadata";
 
 const llo = logger.logMeta.bind(null, { service: "services:pluginMetadata" });

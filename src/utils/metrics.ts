@@ -5,7 +5,7 @@
 
 import type { HandlerContext } from "generated";
 import { PluginActivityType } from "../enums";
-import { activityMetricId } from "../ids";
+import { activityMetricId } from "../utils/ids";
 
 export async function incrementDaoProposalCount(context: HandlerContext, daoId: string) {
   const dao = await context.Dao.get(daoId);

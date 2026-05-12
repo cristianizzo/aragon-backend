@@ -1,10 +1,10 @@
 import { ERC721 } from "generated";
 import { getAddress } from "viem";
 import { TransactionSide, TransactionType } from "../enums";
-import { daoId } from "../ids";
 import { updateDaoAssets } from "../services/asset";
 import { addToken } from "../services/token";
 import { recordTransaction } from "../services/transaction";
+import { daoId } from "../utils/ids";
 
 // Wildcard ERC-721 Transfer subscription — mirrors the ERC-20 wildcard
 // handler. Topic0 collides with ERC-20's Transfer, but the third param

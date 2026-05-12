@@ -9,9 +9,9 @@ import {
 } from "../constants";
 import { PermissionEvent, PluginInterfaceType, PluginStatus } from "../enums";
 import logger from "../helpers/logger";
-import { daoId, eventLogId, pluginId, pluginMemberId, tokenId } from "../ids";
 import { addMember } from "../services/member";
 import { setPluginStatus } from "../services/pluginInstall";
+import { daoId, eventLogId, pluginId, pluginMemberId, tokenId } from "../utils/ids";
 
 /**
  * Permission lifecycle for DAOs — `DAO.Granted` and `DAO.Revoked`. Lives in

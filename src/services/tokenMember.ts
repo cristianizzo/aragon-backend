@@ -1,6 +1,6 @@
 import type { HandlerContext } from "generated";
 import { ZERO_ADDRESS } from "../constants";
-import { tokenMemberId } from "../ids";
+import { tokenMemberId } from "../utils/ids";
 
 /**
  * Adjust the `delegateReceivedCount` and `tokenIds` of a TokenMember row at

@@ -2,10 +2,10 @@ import { TokenVoting } from "generated";
 import { getAddress } from "viem";
 import { fetchTokenTotalSupplyAtBlock } from "../effects/token";
 import { PluginInterfaceType } from "../enums";
-import { pluginId, settingId } from "../ids";
 import { applyPluginMetadata } from "../services/pluginMetadata";
 import { createProposal, executeProposal } from "../services/proposal";
 import { recordVote } from "../services/vote";
+import { pluginId, settingId } from "../utils/ids";
 
 TokenVoting.VotingSettingsUpdated.handler(async ({ event, context }) => {
   const chainId = event.chainId;

@@ -1,9 +1,9 @@
 import { VotingEscrow } from "generated";
 import { getAddress } from "viem";
-import { lockId, tokenDelegationId } from "../ids";
 import { addMember } from "../services/member";
 import { adjustDelegateRelationship } from "../services/tokenMember";
 import { lookupVeChainByEscrow } from "../services/veChain";
+import { lockId, tokenDelegationId } from "../utils/ids";
 
 VotingEscrow.Deposit.handler(async ({ event, context }) => {
   const chainId = event.chainId;

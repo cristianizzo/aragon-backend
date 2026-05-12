@@ -1,8 +1,8 @@
 import { Admin } from "generated";
 import { getAddress } from "viem";
-import { pluginId } from "../ids";
 import { applyPluginMetadata } from "../services/pluginMetadata";
 import { createProposal, executeProposal } from "../services/proposal";
+import { pluginId } from "../utils/ids";
 
 /**
  * Admin plugin = single-member instant execution. `ProposalCreated` and

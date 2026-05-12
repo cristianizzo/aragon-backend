@@ -1,10 +1,10 @@
 import { GovernanceERC20 } from "generated";
 import { getAddress } from "viem";
 import { ZERO_ADDRESS } from "../constants";
-import { eventLogId, tokenMemberId } from "../ids";
 import { addMember } from "../services/member";
 import { addToken } from "../services/token";
 import { adjustDelegateRelationship } from "../services/tokenMember";
+import { eventLogId, tokenMemberId } from "../utils/ids";
 
 // Both GovernanceERC20 events are emitted exclusively by ERC20Votes-style
 // governance tokens, so any source we see them on is by definition a

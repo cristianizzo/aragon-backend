@@ -1,6 +1,6 @@
 import { PluginRepoRegistry } from "generated";
 import { getAddress } from "viem";
-import { pluginRepoId } from "../ids";
+import { pluginRepoId } from "../utils/ids";
 
 PluginRepoRegistry.PluginRepoRegistered.handler(async ({ event, context }) => {
   const chainId = event.chainId;

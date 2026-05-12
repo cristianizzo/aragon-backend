@@ -29,7 +29,19 @@ interface Limits {
   minTimeMs: number;
 }
 
-const num = (key: string, fallback: number): number => (process.env[key] ? Number(process.env[key]) : fallback);
+/**
+ * Read a positive integer env var, falling back when missing OR when the
+ * value parses to anything other than a finite non-negative number.
+ * Bottleneck throws on `NaN` for `maxConcurrent` / `minTime`, so we have
+ * to guard at the boundary rather than letting a misconfigured env var
+ * crash the indexer at first request.
+ */
+const num = (key: string, fallback: number): number => {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
 
 // Defaults: free-tier-friendly. Etherscan free is 5 req/s, Routescan ~10
 // req/s, 4byte directory ~5 req/s. ZkSync / Blockscout / Subscan have no

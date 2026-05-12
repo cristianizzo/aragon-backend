@@ -1,7 +1,6 @@
 import { StagedProposalProcessor } from "generated";
 import { getAddress } from "viem";
 import { PluginInterfaceType } from "../enums";
-import { pluginId } from "../ids";
 import { applyPluginMetadata } from "../services/pluginMetadata";
 import { cancelProposal, createProposal, editProposal, executeProposal } from "../services/proposal";
 import {
@@ -10,6 +9,7 @@ import {
   applyStagesUpdated,
   applySubProposalCreated,
 } from "../services/sppStages";
+import { pluginId } from "../utils/ids";
 
 StagedProposalProcessor.ProposalResultReported.handler(async ({ event, context }) =>
   applyProposalResultReported(context, {

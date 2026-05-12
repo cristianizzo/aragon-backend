@@ -1,7 +1,7 @@
 import { ExecuteSelectorCondition } from "generated";
 import { getAddress } from "viem";
 import { decodeSelector } from "../effects/decodeSelector";
-import { nativeTransferPermissionId, selectorPermissionId } from "../ids";
+import { nativeTransferPermissionId, selectorPermissionId } from "../utils/ids";
 
 ExecuteSelectorCondition.SelectorAllowed.handler(async ({ event, context }) => {
   const chainId = event.chainId;

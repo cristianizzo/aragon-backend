@@ -1,6 +1,6 @@
 import type { HandlerContext } from "generated";
 import { PluginActivityType, PluginInterfaceType } from "../enums";
-import { daoVoterId, pluginId, pluginMemberId, proposalId, voteId } from "../ids";
+import { daoVoterId, pluginId, pluginMemberId, proposalId, voteId } from "../utils/ids";
 import { trackPluginActivity } from "../utils/metrics";
 import { addMember } from "./member";
 

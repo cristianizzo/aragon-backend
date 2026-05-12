@@ -2,11 +2,11 @@ import { Multisig } from "generated";
 import { getAddress } from "viem";
 import { VoteOption } from "../constants";
 import { PluginInterfaceType } from "../enums";
-import { pluginId, pluginMemberId, settingId } from "../ids";
 import { addMember } from "../services/member";
 import { applyPluginMetadata } from "../services/pluginMetadata";
 import { createProposal, executeProposal } from "../services/proposal";
 import { recordVote } from "../services/vote";
+import { pluginId, pluginMemberId, settingId } from "../utils/ids";
 
 Multisig.MultisigSettingsUpdated.handler(async ({ event, context }) => {
   const chainId = event.chainId;
