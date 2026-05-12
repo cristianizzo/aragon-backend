@@ -212,6 +212,9 @@ contracts:
       - event: CampaignPaused(uint256 indexed campaignId)
       - event: CampaignResumed(uint256 indexed campaignId)
       - event: CampaignEnded(uint256 indexed campaignId)
+      # Per-user payout event — drives `CampaignReward.claims[]` and the
+      # running `Campaign.claimCount` / `Campaign.totalClaimed` aggregates.
+      - event: PayoutClaimed(uint256 indexed campaignId, address indexed recipient, uint256 amount)
       - event: MetadataSet(bytes metadata)
         name: CapitalDistributorMetadataSet
 

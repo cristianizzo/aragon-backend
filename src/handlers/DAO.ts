@@ -49,6 +49,7 @@ DAO.NativeTokenDeposited.handler(async ({ event, context }) => {
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
+    transactionIndex: event.transaction.transactionIndex,
     logIndex: event.logIndex,
     side: TransactionSide.Deposit,
     type: TransactionType.NativeToken,
@@ -88,6 +89,7 @@ async function recordNativeWithdraws(
     blockNumber: number;
     blockTimestamp: number;
     transactionHash: string;
+    transactionIndex?: number;
     logIndex: number;
   },
 ): Promise<void> {
@@ -101,6 +103,7 @@ async function recordNativeWithdraws(
     blockNumber: args.blockNumber,
     blockTimestamp: args.blockTimestamp,
     transactionHash: args.transactionHash,
+    transactionIndex: args.transactionIndex,
     logIndex: args.logIndex,
     side: TransactionSide.Withdraw,
     type: TransactionType.NativeToken,
@@ -141,6 +144,7 @@ DAO.Executed.handler(async ({ event, context }) =>
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
+    transactionIndex: event.transaction.transactionIndex,
     logIndex: event.logIndex,
   }),
 );
@@ -153,6 +157,7 @@ DAO.ExecutedV2.handler(async ({ event, context }) =>
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
+    transactionIndex: event.transaction.transactionIndex,
     logIndex: event.logIndex,
   }),
 );

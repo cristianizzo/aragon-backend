@@ -199,7 +199,15 @@ export async function stubPluginOnInstallPrepared(context: HandlerContext, args:
     // resolve the parent plugin via `Plugin.getWhere({escrowAddress})`
     // — the JSON sub-field isn't queryable as an index.
     escrowAddress: ve?.escrowAddress ? getAddress(ve.escrowAddress) : undefined,
-    conditionAddress: findProposalConditionAddress(args.rawPermissions),
+    // `conditionAddress` is the runtime-tracked latest non-zero condition
+    // ever Granted for this plugin (maintained by the DAO.Granted handler in
+    // `src/handlers/Permission.ts`). Starts undefined at install — mirrors
+    // legacy `pluginHandler.updateConditionAddress` lazy population pattern.
+    conditionAddress: undefined,
+    // Install-time stable condition gating CREATE_PROPOSAL_PERMISSION.
+    // Distinct from `conditionAddress` — legacy keeps both, and they often
+    // differ (CREATE_PROPOSAL gating vs generic permission gating).
+    proposalCreationConditionAddress: findProposalConditionAddress(args.rawPermissions),
     lockManagerAddress: lockManagerAddress ? getAddress(lockManagerAddress) : undefined,
     permissions: args.permissions,
     // Metadata fields populated separately by per-plugin `MetadataSet`

@@ -85,6 +85,19 @@ DAO.Granted.handler(async ({ event, context }) => {
     }),
   );
 
+  // Latest-condition denorm on Plugin: if `where` is one of our indexed
+  // plugins and this Granted carries a non-zero condition, stash it on
+  // `Plugin.conditionAddress`. Mirrors legacy
+  // `pluginHandler.updateConditionAddress` — it tracks the most recent
+  // condition flipped onto the plugin so a single query can answer
+  // "what condition is currently gating this plugin?".
+  if (conditionAddress) {
+    const targetPlugin = await context.Plugin.get(pluginId(chainId, whereAddress));
+    if (targetPlugin && targetPlugin.conditionAddress !== conditionAddress) {
+      context.Plugin.set({ ...targetPlugin, conditionAddress });
+    }
+  }
+
   // Forward-flip: if the granted permission is MINT_PERMISSION on a token we
   // already track, mark Token.mintableByDao=true. The backward direction
   // (token discovered after the grant) is handled in `addToken` via DB lookup.

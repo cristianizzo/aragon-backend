@@ -12,6 +12,10 @@ export interface RecordTransactionInput {
   blockNumber: number;
   blockTimestamp: number;
   transactionHash: string;
+  // Tx position inside the block — second sort key after `blockNumber`.
+  // Required by callers that need stable ordering between transactions in
+  // the same block. Optional because some legacy code paths don't have it.
+  transactionIndex?: number;
   logIndex: number;
   side: TransactionSide;
   type: TransactionType;
@@ -45,6 +49,7 @@ export function recordTransaction(context: HandlerContext, input: RecordTransact
     blockNumber: input.blockNumber,
     blockTimestamp: input.blockTimestamp,
     transactionHash: input.transactionHash,
+    transactionIndex: input.transactionIndex,
     logIndex: input.logIndex,
     side: input.side,
     type: input.type,

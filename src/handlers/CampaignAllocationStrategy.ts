@@ -52,6 +52,10 @@ CampaignAllocationStrategy.MerkleCampaignSet.handler(async ({ event, context }) 
     allocationStrategy,
     merkleRoot,
     previousMerkleRoot: undefined,
+    // `totalMembers` is the leaf count for this root — sourced from
+    // off-chain merkle metadata when present (the event itself doesn't
+    // carry it). Leave null; enrichment can fill in later if needed.
+    totalMembers: undefined,
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
@@ -86,6 +90,7 @@ CampaignAllocationStrategy.MerkleCampaignUpdated.handler(async ({ event, context
     allocationStrategy,
     merkleRoot: newMerkleRoot,
     previousMerkleRoot,
+    totalMembers: undefined,
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
