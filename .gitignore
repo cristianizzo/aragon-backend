@@ -63,6 +63,7 @@ scripts/
 docs/
 AGENTS.md
 CLAUDE.md
+MIGRATION_STATUS.md
 .claude/
 
 # OS
