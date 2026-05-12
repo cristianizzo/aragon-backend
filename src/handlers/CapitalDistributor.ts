@@ -1,7 +1,8 @@
 import { CapitalDistributor } from "generated";
 import { getAddress } from "viem";
 import { fetchIpfsJson } from "../effects/ipfs";
-import { campaignId as makeCampaignId } from "../ids";
+import { campaignRewardId, campaignId as makeCampaignId } from "../ids";
+import { addMember } from "../services/member";
 import { applyPluginMetadata } from "../services/pluginMetadata";
 import { extractIpfsCid, parseCampaignMetadata } from "../utils/metadata";
 
@@ -44,9 +45,68 @@ CapitalDistributor.CampaignCreated.handler(async ({ event, context }) => {
     merkleRoot: undefined,
     isPaused: false,
     isEnded: false,
+    // Running aggregates — maintained by the PayoutClaimed handler below.
+    // `totalRewards` would come from the campaign metadata's budget field
+    // when present; default null leaves it to enrichment.
+    claimCount: 0,
+    totalClaimed: 0n,
+    totalRewards: undefined,
     blockNumber: event.block.number,
     transactionHash: event.transaction.hash,
   });
+});
+
+CapitalDistributor.PayoutClaimed.handler(async ({ event, context }) => {
+  const chainId = event.chainId;
+  const pluginAddress = getAddress(event.srcAddress);
+  const campaignIndex = event.params.campaignId.toString();
+  const recipient = getAddress(event.params.recipient);
+  const amount = event.params.amount;
+
+  const campaign_id = makeCampaignId(chainId, pluginAddress, campaignIndex);
+  const campaign = await context.Campaign.get(campaign_id);
+  if (!campaign) return;
+
+  // CampaignReward row keyed by (campaign, claimer) — `claims[]` is an
+  // append-only audit array of every PayoutClaimed for this pair. Dedup
+  // by transactionHash so an event replay doesn't double-credit.
+  const reward_id = campaignRewardId(chainId, pluginAddress, campaignIndex, recipient);
+  const existing = await context.CampaignReward.get(reward_id);
+  const prevClaims = Array.isArray(existing?.claims) ? (existing.claims as Array<Record<string, unknown>>) : [];
+  if (prevClaims.some((c) => c.transactionHash === event.transaction.hash && c.logIndex === event.logIndex)) {
+    return;
+  }
+
+  const newClaim = {
+    amount: amount.toString(),
+    transactionHash: event.transaction.hash,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    logIndex: event.logIndex,
+  };
+
+  context.CampaignReward.set({
+    id: reward_id,
+    chainId,
+    campaign_id,
+    campaignId: campaignIndex,
+    pluginAddress,
+    allocationStrategy: campaign.allocationStrategy,
+    claimerAddress: recipient,
+    totalClaimed: (existing?.totalClaimed ?? 0n) + amount,
+    claims: [...prevClaims, newClaim],
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+  });
+
+  context.Campaign.set({
+    ...campaign,
+    claimCount: campaign.claimCount + 1,
+    totalClaimed: campaign.totalClaimed + amount,
+  });
+
+  await addMember(context, { address: recipient, blockNumber: event.block.number });
 });
 
 CapitalDistributor.CampaignPaused.handler(async ({ event, context }) => {

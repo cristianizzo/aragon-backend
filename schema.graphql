@@ -160,6 +160,12 @@ type Plugin {
   # for non-VE plugins.
   escrowAddress: String @index
   conditionAddress: String
+  # Address of the condition contract gating `CREATE_PROPOSAL_PERMISSION`
+  # — distinct from `conditionAddress` (which gates `EXECUTE_PROPOSAL`).
+  # Mirrors legacy `Plugin.proposalCreationConditionAddress`. Null when no
+  # condition was attached at install (the typical case for plain Multisig
+  # / TokenVoting where any member can propose).
+  proposalCreationConditionAddress: String
   lockManagerAddress: String
   permissions: Json
   # Plugin metadata — populated by `MetadataSet(bytes metadata)` events
@@ -590,6 +596,10 @@ type Transaction {
   blockNumber: Int! @index
   blockTimestamp: Int!
   transactionHash: String! @index
+  # Tx position inside the block — second sort key after `blockNumber`
+  # (mirrors legacy `Transaction.transactionIndex`). Two transactions in
+  # the same block sort ambiguously by `logIndex` alone.
+  transactionIndex: Int
   logIndex: Int!
   side: TransactionSide! @index
   type: TransactionType! @index
@@ -778,6 +788,14 @@ type Gauge {
   pluginAddress: String! @index
   creatorAddress: String!
   metadataUri: String
+  # Parsed gauge metadata from `metadataUri` IPFS payload — same shape as
+  # other plugins' metadata blob. Mirrors legacy `Gauge.name/description/
+  # links/avatar`. Populated lazily by `GaugeMetadataUpdated` after each
+  # metadata change.
+  name: String
+  description: String
+  links: Json
+  avatar: String
   status: GaugeStatus!
   blockNumber: Int!
   transactionHash: String!
@@ -791,9 +809,34 @@ type GaugeVote {
   voterAddress: String! @index
   epoch: String! @index
   votingPower: BigInt!
+  # `true` when the vote rolls over to subsequent epochs without the voter
+  # having to re-cast. Mirrors legacy `GaugeVote.persistentVote`.
+  persistentVote: Boolean!
+  # Set to the tx hash of a `Reset` event when the voter cancels this vote.
+  # Soft-clear pattern (mirrors `Vote.voteCleared`) — keeps the row so audit
+  # history survives rather than deleting it. Null while the vote is active.
+  resetVoteTransactionHash: String
   blockNumber: Int!
   blockTimestamp: Int
   transactionHash: String!
+}
+
+# Aggregated per-epoch metrics for a single Gauge. Mirrors legacy
+# `GaugeMetrics`: `totalMemberVoteCount` is the count of distinct voters
+# this epoch, `currentEpochVotingPower` is the gauge's running total at
+# this point in the epoch, and `totalGaugeVotingPower` is the sum across
+# all gauges in the same plugin/epoch (denormalised so the gauge view can
+# render share-of-pool without a second query).
+type GaugeMetrics {
+  id: ID!
+  chainId: Int!
+  pluginAddress: String! @index
+  gaugeAddress: String! @index
+  epoch: String! @index
+  totalMemberVoteCount: Int!
+  currentEpochVotingPower: BigInt!
+  totalGaugeVotingPower: BigInt!
+  blockNumber: Int!
 }
 
 # ==============================
@@ -825,9 +868,41 @@ type Campaign {
   merkleRoot: String
   isPaused: Boolean!
   isEnded: Boolean!
+  # Running aggregates maintained at write-time by the `Claimed` handler on
+  # the allocation strategy. Mirrors legacy `Campaign.claimCount` /
+  # `Campaign.totalClaimed`. Default 0 / 0n at create.
+  claimCount: Int!
+  totalClaimed: BigInt!
+  # Total reward budget published in the campaign metadata (legacy
+  # `Campaign.totalRewards`). Optional — older payloads omit it.
+  totalRewards: BigInt
   blockNumber: Int!
   transactionHash: String!
   merkleRootLogs: [CampaignMerkleRootLog!]! @derivedFrom(field: "campaign")
+  rewards: [CampaignReward!]! @derivedFrom(field: "campaign")
+}
+
+# Per-claimer reward record under a Campaign. Mirrors legacy
+# `CampaignReward` — one row per `(campaign, claimer)` with running
+# `totalClaimed` and an append-only `claims` audit array. The Claimed
+# event on the allocation strategy is the only writer.
+type CampaignReward {
+  id: ID!
+  chainId: Int!
+  campaign: Campaign! @index
+  campaignId: String! @index
+  pluginAddress: String! @index
+  allocationStrategy: String! @index
+  claimerAddress: String! @index
+  # Cumulative amount claimed across all `Claimed` events. Bumped per claim.
+  totalClaimed: BigInt!
+  # Append-only Json array of `{ amount, transactionHash, blockNumber,
+  # blockTimestamp, logIndex }`. Mirrors legacy `CampaignReward.claims`.
+  claims: Json
+  # Block of the most recent claim. Stable update target.
+  blockNumber: Int!
+  blockTimestamp: Int
+  transactionHash: String!
 }
 
 # Audit log of every `MerkleCampaignSet` / `MerkleCampaignUpdated` event
@@ -844,6 +919,10 @@ type CampaignMerkleRootLog {
   merkleRoot: String!
   # Previous root for `MerkleCampaignUpdated`; null on the initial `Set`.
   previousMerkleRoot: String
+  # Number of leaves under this merkle root (legacy
+  # `CampaignMerkleRoot.totalMembers`). Sourced from the Set/Updated event's
+  # `totalMembers` param when present. Null for older roots without it.
+  totalMembers: Int
   blockNumber: Int! @index
   blockTimestamp: Int
   transactionHash: String!
@@ -860,6 +939,12 @@ type SelectorPermission {
   conditionAddress: String! @index
   selector: String! @index
   whereAddress: String! @index
+  # Contract being called (the actual target of the function selector).
+  # Distinct from `whereAddress` in batched-target setups where the
+  # condition address gates calls TO `target`. Mirrors legacy
+  # `SelectorPermission.target`. Null when the event source doesn't carry
+  # a separate target.
+  target: String @index
   allowed: Boolean!
   blockNumber: Int!
   transactionHash: String!
@@ -869,6 +954,16 @@ type SelectorPermission {
   # Full canonical signature, e.g. `transfer(address,uint256)`. Comes from
   # KNOWN_ABIS first, then 4byte directory. Null when both miss.
   functionSig: String
+  # Rich decoded blob mirroring legacy `SelectorPermission.decoded`:
+  # `{ functionName, contractName, proxyName, implementationAddress,
+  #   inputs: [{ name, type }], notice }`. Populated from the same effect
+  # that produces `functionName` / `functionSig`.
+  decoded: Json
+  # Soft-clear audit object set when a Revoked flips this row to
+  # `allowed: false`. Mirrors `Vote.voteCleared` shape: `{ status: true,
+  # transactionHash, blockNumber, blockTimestamp }`. Null while the
+  # permission is still allowed.
+  disallowed: Json
 }
 
 type NativeTransferPermission {

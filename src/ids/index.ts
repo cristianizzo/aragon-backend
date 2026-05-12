@@ -133,6 +133,30 @@ export const gaugeVoteId = (
   return `${chainId}-${a(gauge)}-${a(voter)}-${epoch}${tag}-${logIndex}` as GaugeVoteId;
 };
 
+/**
+ * Canonical (gauge, voter, epoch) id — one row per voter's active vote in
+ * an epoch. Used for the soft-clear pattern: `Voted` upserts, `Reset`
+ * patches `resetVoteTransactionHash` on the same row instead of writing a
+ * sibling. Mirrors legacy `VoteGauge` semantics.
+ */
+export const canonicalGaugeVoteId = (
+  chainId: number,
+  gauge: string,
+  voter: string,
+  epoch: string | number | bigint,
+): GaugeVoteId => `${chainId}-${a(gauge)}-${a(voter)}-${epoch}` as GaugeVoteId;
+
+export const gaugeMetricsId = (chainId: number, gauge: string, epoch: string | number | bigint): string =>
+  `${chainId}-${a(gauge)}-${epoch}`;
+
+/**
+ * Canonical (campaign, claimer) id — one row per claimer per campaign.
+ * `PayoutClaimed` upserts the row and appends to its `claims` Json array.
+ * Mirrors legacy `CampaignReward.id`.
+ */
+export const campaignRewardId = (chainId: number, plugin: string, campaignId: string, claimer: string): string =>
+  `${chainId}-${a(plugin)}-${campaignId}-${a(claimer)}`;
+
 export const selectorPermissionId = (
   chainId: number,
   condition: string,

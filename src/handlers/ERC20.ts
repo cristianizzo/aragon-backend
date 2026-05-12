@@ -45,6 +45,7 @@ ERC20.Transfer.handler(
       blockNumber: event.block.number,
       blockTimestamp: event.block.timestamp,
       transactionHash: event.transaction.hash,
+      transactionIndex: event.transaction.transactionIndex,
       logIndex: event.logIndex,
       type: TransactionType.Erc20,
       fromAddress,
