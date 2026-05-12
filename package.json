@@ -3,14 +3,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "codegen": "envio codegen && cd generated && npm install && npx rescript build",
+    "codegen": "envio codegen && cd generated && pnpm install --shamefully-hoist --ignore-workspace && npx rescript build",
     "dev": "envio dev",
     "start": "envio start",
-    "hasura:start": "docker start envio-hasura 2>/dev/null || docker run -d --name envio-hasura --network host -e HASURA_GRAPHQL_SERVER_PORT=8090 -e HASURA_GRAPHQL_DATABASE_URL=postgres://postgres:testing@localhost:5433/envio-dev -e HASURA_GRAPHQL_ENABLE_CONSOLE=true -e HASURA_GRAPHQL_DEV_MODE=true hasura/graphql-engine:v2.43.0",
-    "hasura:track": "bash scripts/track-tables.sh",
-    "start:server": "pnpm hasura:start && pnpm hasura:track & ENVIO_PG_PORT=5433 ENVIO_HASURA=false HASURA_GRAPHQL_ENDPOINT=http://localhost:8090/v1/metadata envio dev",
-    "status": "PGPASSWORD=testing psql -h localhost -p 5433 -U postgres -d envio-dev -c \"SELECT id as chain, progress_block, source_block, events_processed, ready_at FROM envio_chains ORDER BY id;\"",
-    "stop:server": "envio stop && docker stop envio-hasura && docker rm envio-hasura",
+    "status": "docker exec envio-postgres psql -U postgres -d envio-dev -c \"SELECT id as chain, progress_block, source_block, events_processed, ready_at FROM envio_chains ORDER BY id;\"",
     "test": "vitest run",
     "lint": "biome check src/ test/",
     "lint:fix": "biome check --write src/ test/",
@@ -25,7 +21,11 @@
     "vitest": "4.0.18"
   },
   "dependencies": {
-    "envio": "3.0.0-alpha.18"
+    "bottleneck": "^2.19.5",
+    "envio": "3.0.0-alpha.18",
+    "logzio-nodejs": "^2.5.0",
+    "winston": "^3.19.0",
+    "winston-transport": "^4.9.0"
   },
   "optionalDependencies": {
     "generated": "./aragon-indexer/../generated"

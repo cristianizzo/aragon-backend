@@ -53,6 +53,10 @@ benchmarks/
 # Migration reference (not part of the indexer)
 migration/
 
+# Local-only scripts (diagnostic, deployment, table tracking — not part of
+# the indexer source). Each developer can keep their own; not for the PR.
+scripts/
+
 # OS
 .DS_Store
 Thumbs.db

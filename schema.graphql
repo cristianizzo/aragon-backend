@@ -29,6 +29,32 @@ enum PermissionEvent {
   Revoked
 }
 
+enum TransactionSide {
+  deposit
+  withdraw
+}
+
+enum TransactionType {
+  nativeToken
+  erc20
+  erc721
+  erc1155
+}
+
+enum TokenType {
+  nativeToken
+  erc20
+  erc721
+}
+
+# IERC6372 vote-checkpointing modes. The contract's `CLOCK_MODE()` returns
+# strings like `"mode=blocknumber"` or `"mode=timestamp&from=default"` —
+# we parse those into this enum.
+enum ClockMode {
+  blocknumber
+  timestamp
+}
+
 enum ProposalStatus {
   Active
   Succeeded
@@ -58,11 +84,25 @@ type Dao {
   description: String
   avatar: String
   links: Json
+  # Extended IPFS-metadata fields (compliance + legal). Mirror legacy
+  # `Dao.blockedCountries / enableOfacCheck / termsConditionsUrl`.
+  # Populated by `parseDaoMetadata`. All optional — DAOs created before
+  # these fields became standard simply leave them null.
+  blockedCountries: Json
+  enableOfacCheck: Boolean
+  termsConditionsUrl: String
   proposalCount: Int!
   proposalsExecuted: Int!
   uniqueVoters: Int!
   voteCount: Int!
   memberCount: Int!
+  # Soft-delete + admin-hide flags. Application-managed, not indexer-driven.
+  # Default `isActive: true`, `isHidden: false`. Mirrors legacy `Dao.isActive`
+  # / `Dao.isHidden`. Indexed because legacy uses 5 compound indexes that
+  # filter on these.
+  isActive: Boolean! @index
+  isHidden: Boolean! @index
+  voters: [DaoVoter!]! @derivedFrom(field: "dao")
   plugins: [Plugin!]! @derivedFrom(field: "dao")
   permissions: [DaoPermission!]! @derivedFrom(field: "dao")
   proposals: [Proposal!]! @derivedFrom(field: "dao")
@@ -93,16 +133,80 @@ type Plugin {
   release: Int
   build: Int
   subdomain: String
+  # URL-safe slug — `<root>-<6-hex>` where root mirrors legacy
+  # `IPluginSlug` (e.g. `multisig`, `tokenvoting`, `core` for SPP) and
+  # the suffix is the last 6 hex chars of the plugin address.
+  # Deterministic; never null.
+  slug: String! @index
+  # Role flags derived from `interfaceType` at install time. Mirrors
+  # legacy `Plugin.isProcess` / `isBody` / `isPolicy`. Used to filter
+  # plugin lists by role without hard-coding interfaceType checks in
+  # consumers.
+  # - isProcess: creates proposals (Multisig / TokenVoting / LockToVote / Admin / SPP)
+  # - isBody:    decision-making body that votes/approves (Multisig / TokenVoting / LockToVote / Admin)
+  # - isPolicy:  Router / Claimer policy plugin
+  isProcess: Boolean! @index
+  isBody: Boolean! @index
+  isPolicy: Boolean! @index
   tokenAddress: String
+  # Voting-escrow chain when this plugin uses VE governance. Shape:
+  # `{ escrow, queue, curve, clock, nftLock, underlying }` — addresses of
+  # the contracts in the VE pipeline. Populated by `discoverVeContracts`
+  # at install time. Null for plugins that don't use VE.
   votingEscrow: Json
+  # Indexed denorm of `votingEscrow.escrow` so VE handlers
+  # (`VotingEscrow.Deposit/Withdraw/...`) can resolve the parent plugin in
+  # one indexed lookup rather than scanning Plugin.votingEscrow JSON. Null
+  # for non-VE plugins.
+  escrowAddress: String @index
   conditionAddress: String
   lockManagerAddress: String
   permissions: Json
-  subPlugins: Json
+  # Plugin metadata — populated by `MetadataSet(bytes metadata)` events
+  # emitted by the plugin itself (every OSx plugin inherits this from
+  # `PluginUUPSUpgradeable`). Field names mirror `Dao` for consistency.
+  # `links` is `[{name, url}]` per the Aragon IPFS metadata convention.
+  metadataUri: String
+  name: String
+  description: String
+  links: Json
+  # SPP-specific extras parsed from the metadata payload. Optional — older
+  # plugin metadata predates them. `processKey` is a legacy slug-input
+  # we record for parity but our own `slug` field is the authoritative one.
+  processKey: String
+  stageNames: Json
   settings: [PluginSetting!]! @derivedFrom(field: "plugin")
   proposals: [Proposal!]! @derivedFrom(field: "plugin")
   votes: [Vote!]! @derivedFrom(field: "plugin")
   members: [PluginMember!]! @derivedFrom(field: "plugin")
+  # Sub-plugin relationships — derived from PluginParentLink. A plugin
+  # may have multiple parents (e.g. a body referenced by two SPPs),
+  # which is why this is a link entity rather than scalar fields.
+  parentLinks: [PluginParentLink!]! @derivedFrom(field: "childPlugin")
+  childLinks: [PluginParentLink!]! @derivedFrom(field: "parentPlugin")
+}
+
+# Many-to-many link between a parent plugin (typically an SPP) and its
+# sub-plugin bodies. Populated by SPP `StagesUpdated` and consumed by the
+# uninstall cascade. Always scoped by `daoAddress` — the same plugin
+# contract address may be installed in multiple DAOs and we never link
+# across DAOs.
+type PluginParentLink {
+  id: ID!
+  chainId: Int!
+  dao: Dao! @index
+  daoAddress: String! @index
+  parentPlugin: Plugin! @index
+  parentPluginAddress: String! @index
+  childPlugin: Plugin! @index
+  childPluginAddress: String! @index
+  # Index of the parent's stage where the child sits. A child can appear
+  # at different stages under different parents — the per-link index is
+  # the source of truth.
+  stageIndex: Int!
+  blockNumber: Int!
+  blockTimestamp: Int
+  transactionHash: String!
 }
 
 type PluginSetupLog {
@@ -129,6 +233,11 @@ type DaoPermission {
   dao: Dao! @index
   daoAddress: String! @index
   blockNumber: Int!
+  # Transaction index within the block — legacy uses this as the second
+  # sort key (after blockNumber) when ordering permission events. Without
+  # it, two permissions in the same block but different txs sort
+  # ambiguously by `logIndex` alone.
+  transactionIndex: Int!
   transactionHash: String!
   logIndex: Int!
   permissionId: String! @index
@@ -136,6 +245,76 @@ type DaoPermission {
   whereAddress: String! @index
   event: PermissionEvent!
   conditionAddress: String
+}
+
+# Audit log of every `MetadataSet(bytes metadata)` event emitted by a DAO
+# contract. Mirrors legacy `LogMetadata` (app-backend Mongo collection) —
+# captures the full history of metadata changes per DAO so consumers can
+# reconstruct "what did this DAO's metadata look like at block N?" or detect
+# IPFS-rot for past versions. The `Dao.metadataUri/name/...` fields hold the
+# LATEST values; this table holds every prior value too.
+#
+# `fetchSucceeded` records whether the IPFS roundtrip resolved at index time.
+# False means the `name/description/avatar/links` columns will be null even
+# though `metadataUri` is set — the enrichment service can retry these later.
+# Dedup row for `Dao.uniqueVoters` — one per `(dao, voter)` pair, written
+# the first time an address votes on any proposal in this DAO. The
+# vote-recording service uses presence of this row to decide whether to
+# bump `Dao.uniqueVoters`. Mirrors the legacy `daoMetrics.uniqueVoters`
+# count which was rebuilt periodically via Mongo aggregation.
+type DaoVoter {
+  id: ID!
+  chainId: Int!
+  dao: Dao! @index
+  daoAddress: String! @index
+  memberAddress: String! @index
+  firstVotedAt: Int!
+  firstVoteTransactionHash: String!
+}
+
+type DaoMetadataLog {
+  id: ID!
+  chainId: Int!
+  dao: Dao! @index
+  daoAddress: String! @index
+  metadataUri: String!
+  rawMetadata: String!
+  name: String
+  description: String
+  avatar: String
+  links: Json
+  blockedCountries: Json
+  enableOfacCheck: Boolean
+  termsConditionsUrl: String
+  fetchSucceeded: Boolean!
+  blockNumber: Int! @index
+  blockTimestamp: Int
+  transactionHash: String!
+  logIndex: Int!
+}
+
+# Audit log of every `MetadataSet(bytes metadata)` event emitted by a Plugin
+# contract (Multisig/TokenVoting/LockToVote/Admin/Gauge/CapitalDistributor/
+# StagedProposalProcessor). Same shape and rationale as `DaoMetadataLog` —
+# Plugin's `metadataUri/name/description/links` fields hold the LATEST,
+# this table holds the full history.
+type PluginMetadataLog {
+  id: ID!
+  chainId: Int!
+  plugin: Plugin! @index
+  pluginAddress: String! @index
+  metadataUri: String!
+  rawMetadata: String!
+  name: String
+  description: String
+  links: Json
+  processKey: String
+  stageNames: Json
+  fetchSucceeded: Boolean!
+  blockNumber: Int! @index
+  blockTimestamp: Int
+  transactionHash: String!
+  logIndex: Int!
 }
 
 type PluginSetting {
@@ -146,6 +325,10 @@ type PluginSetting {
   blockNumber: Int!
   blockTimestamp: Int
   transactionHash: String!
+  # Block at which this row stopped being authoritative — set when the parent
+  # plugin is uninstalled (cascade in `services/pluginInstall.ts`). Null
+  # means the row is still active. Mirrors legacy `Setting.inactiveAtBlockNumber`.
+  inactiveAtBlockNumber: Int @index
   # Multisig settings
   onlyListed: Boolean
   minApprovals: Int
@@ -155,10 +338,20 @@ type PluginSetting {
   minParticipation: BigInt
   minDuration: BigInt
   minProposerVotingPower: BigInt
+  # LockToVote-specific: minimum approval ratio (uint32 fixed-point per OSx
+  # `RATIO_BASE`). Distinct from `supportThreshold` which is the YES-vs-NO
+  # ratio; this is the required absolute approval against total locked.
+  minApprovalRatio: BigInt
   # SPP settings
   stages: Json
   # Policy/Router settings
   policy: Json
+  # VE escrow settings (LockToVote only) — `{ minDeposit, minLockTime,
+  # cooldown, feePercent, minFeePercent, minCooldown, maxTime, slope, bias }`,
+  # all BigInts serialized to strings. Fetched via RPC at settings-update
+  # time from `Plugin.votingEscrow.{escrowAddress, exitQueueAddress,
+  # curveAddress}`. Mirrors legacy `Setting.votingEscrow`.
+  votingEscrow: Json
 }
 
 # ==============================
@@ -184,14 +377,92 @@ type Proposal {
   resources: Json
   rawActions: Json
   decodedActions: Json
+  # OSx `allowFailureMap` from ProposalCreated — bitmask indicating which
+  # action indices are allowed to fail without aborting execution.
+  allowFailureMap: BigInt
+  # Member/voting-power snapshot at proposal creation. Shape varies by plugin
+  # type, e.g. `{ membersCount: <int> }` for Multisig/Admin, `{ totalSupply:
+  # <bigint-as-string> }` for token-weighted plugins.
+  snapshot: Json
   status: ProposalStatus!
   startDate: BigInt
   endDate: BigInt
   executed: Boolean!
   executedAt: Int
+  # Block at which the proposal was executed. Mirrors legacy
+  # `executed.blockNumber` — exposed alongside `executedAt` (timestamp)
+  # so consumers can sort/filter by block without joining back to the tx.
+  executedBlockNumber: Int
   executedTxHash: String
+  # Plugin subdomain denormalised onto the row for query convenience
+  # (mirrors legacy `Proposal.pluginSubdomain`). Filled at create time
+  # from the related Plugin's subdomain; null when the plugin has none.
+  pluginSubdomain: String
+  # `media` blob from the proposal's IPFS metadata payload, e.g.
+  # `{ header, logo }`. Mirrors legacy `Proposal.media`. Optional —
+  # older proposals don't carry it. Populated by `parseProposalMetadata`.
+  media: Json
   voteCount: Int!
+  # Per-option tally maintained at write-time. Shape mirrors legacy
+  # `Proposal.metrics.votesByOption`:
+  #   `{ "<voteOption>": { totalVotes: Int, totalVotingPower: String }, ... }`.
+  # Vote-power is serialised as a decimal string so the JSON column round-trips
+  # arbitrary BigInts. `clearVote` (LockToVote only) decrements both fields
+  # using the existing Vote row's option/power.
+  votesByOption: Json
   votes: [Vote!]! @derivedFrom(field: "proposal")
+  # Numeric form of `proposalIndex` — the contract-side per-plugin
+  # counter cast to Int. Indexed for efficient `latest proposal per
+  # plugin` queries (`order_by: incrementalId, limit: 1`). Always equal
+  # to `Number(proposalIndex)` so callers can round-trip either field.
+  incrementalId: Int @index
+  # Audit trail for the most recent edit / cancel — `{ transactionHash,
+  # blockNumber, blockTimestamp }`. Mirrors legacy `Proposal.editedTxInfo` /
+  # `Proposal.cancelTxInfo`. Null until the corresponding event fires.
+  editedTxInfo: Json
+  cancelTxInfo: Json
+  # SPP-only: number of stages on this SPP proposal at creation time.
+  # Set on parents (the SPP's own ProposalCreated). Null on sub-proposals
+  # and non-SPP proposals.
+  totalStages: Int
+  # SPP-only: stage at which this proposal sits beneath its parent SPP.
+  # Set when SubProposalCreated fires for the body. Null otherwise.
+  stageIndex: Int
+  # SPP-only: parent SPP proposal id (full Proposal entity id —
+  # `chainId-pluginAddress-proposalIndex`). Set on sub-proposals only.
+  parentProposalId: String @index
+  isSubProposal: Boolean!
+  # SPP-only on parents: timestamp of the most recent ProposalAdvanced
+  # event. Null until the first stage transition.
+  lastStageTransition: Int
+  # Append-only Json arrays — written by SPP handlers, read read-only
+  # downstream. Shapes mirror legacy:
+  # - subProposals: `[{ stageIndex, body, bodyProposalIndex, transactionHash }]`
+  # - stageExecutions: `[{ stageIndex, status, transactionHash, blockNumber, blockTimestamp }]`
+  # - results: `[{ stageIndex, body, transactionHash }]`
+  subProposals: Json
+  stageExecutions: Json
+  results: Json
+}
+
+# Cross-reference between an SPP parent proposal and one of its sub-body
+# proposals. Created from `SubProposalCreated`. Looked up by the child's
+# `createProposal` to backfill `parentProposalId / stageIndex / isSubProposal`
+# on the child Proposal — handles the chicken-and-egg where the parent
+# fires SubProposalCreated before the body fires its own ProposalCreated.
+type SubProposalLink {
+  id: ID!
+  chainId: Int!
+  parentPluginAddress: String! @index
+  parentProposalIndex: String! @index
+  parentProposalId: String! @index
+  childPluginAddress: String! @index
+  childProposalIndex: String! @index
+  childProposalId: String! @index
+  stageIndex: Int!
+  blockNumber: Int!
+  blockTimestamp: Int
+  transactionHash: String!
 }
 
 type Vote {
@@ -200,19 +471,50 @@ type Vote {
   plugin: Plugin! @index
   proposal: Proposal! @index
   blockNumber: Int! @index
+  # Tx position inside the block + log position inside the tx — used for
+  # stable cross-block ordering when two votes land in the same block.
+  # Mirrors legacy `Vote.transactionIndex` / `Vote.logIndex`.
+  transactionIndex: Int
+  logIndex: Int
   blockTimestamp: Int
   transactionHash: String!
   daoAddress: String! @index
   pluginAddress: String! @index
+  # Voting-token contract for token-weighted plugins (TokenVoting /
+  # LockToVote). Null for membership-based plugins (Multisig). Denormed for
+  # one-hop joins; mirrors legacy `Vote.tokenAddress`.
+  tokenAddress: String @index
   proposalIndex: String! @index
   memberAddress: String! @index
   voteOption: Int
   votingPower: BigInt
+  # On vote replacement (TokenVoting / LockToVote allow changing your vote
+  # before close), the previous vote's tx hash. Lets the UI render
+  # "you previously voted X in tx Y". Null on the first vote.
+  replacedTransactionHash: String
+  # Soft-clear audit object for `LockToVote.VoteCleared` — `{ status: true,
+  # transactionHash, blockNumber, blockTimestamp }`. Mirrors legacy
+  # `Vote.voteCleared`. We keep the row instead of deleting so consumers
+  # can still see "this voter cleared at block N". Null while the vote is
+  # active.
+  voteCleared: Json
 }
 
 # ==============================
 # Member Entities
 # ==============================
+
+# Global member identity — one row per address across all chains, mirrors the
+# legacy `Member` collection. Created lazily the first time we see an address
+# act in any DAO context (DAORegistered creator, MembersAdded, VoteCast, ...).
+type Member {
+  id: ID!
+  address: String! @index
+  ens: String
+  avatar: String
+  firstActivityBlock: Int
+  lastActivityBlock: Int
+}
 
 type PluginMember {
   id: ID!
@@ -226,9 +528,32 @@ type PluginMember {
 type TokenMember {
   id: ID!
   chainId: Int!
+  # For ERC20Votes governance this is the token contract; for VE governance
+  # it is the escrow contract address (rows from VE never collide with
+  # rows from ERC-20 — they're different addresses).
   tokenAddress: String! @index
   memberAddress: String! @index
   votingPower: BigInt!
+  # Block of the most recent `DelegateVotesChanged` that updated
+  # `votingPower`. Mirrors legacy `TokenMember.lastVPBlockNumber` —
+  # consumers use it to age out stale snapshots without joining back
+  # to `DelegateVotesChangedEvent`.
+  lastVPBlockNumber: Int!
+  # Number of currently-incoming delegations to this member. Maintained at
+  # write-time:
+  #   - ERC20Votes: `DelegateChanged` adjusts +1/-1 on the to/from delegate.
+  #   - VE: `TokensDelegated/Undelegated` adjusts +1/-1 on the delegatee.
+  # Improves on legacy, which left the field at 0 and recomputed via Mongo
+  # aggregation over `LogDelegateChanged` at query time. Clamped at 0 — a
+  # decrement against an unknown row is treated as "we missed the prior
+  # delegation" rather than persisting a negative count.
+  delegateReceivedCount: Int!
+  # NFT ids currently delegated TO this member. Empty for plain ERC20Votes
+  # delegation (no per-NFT identity). For VE, accumulates from
+  # `VotingEscrow.TokensDelegated` and shrinks on `TokensUndelegated`.
+  # Authoritative lock-ownership (vs delegation-target) still lives on
+  # `Lock` rows filtered by `memberAddress`.
+  tokenIds: [String!]!
 }
 
 type PluginActivityMetric {
@@ -245,6 +570,59 @@ type PluginActivityMetric {
 }
 
 # ==============================
+# Treasury (Transactions + Assets)
+# ==============================
+
+# One row per transfer log involving a DAO. Native deposits land via
+# `DAO.NativeTokenDeposited`; native withdrawals come from parsing
+# `DAO.Executed` action arrays; ERC-20 transfers from a wildcard `Transfer`
+# handler that filters at handler-time on `Dao.get`. `value` is raw token
+# units — the frontend formats using off-chain decimals.
+#
+# When a transfer goes from one DAO to another (rare but valid), TWO rows
+# are written — one per DAO perspective — disambiguated via `daoAddress`
+# in the id.
+type Transaction {
+  id: ID!
+  chainId: Int!
+  dao: Dao! @index
+  daoAddress: String! @index
+  blockNumber: Int! @index
+  blockTimestamp: Int!
+  transactionHash: String! @index
+  logIndex: Int!
+  side: TransactionSide! @index
+  type: TransactionType! @index
+  fromAddress: String! @index
+  toAddress: String! @index
+  tokenAddress: String! @index
+  value: BigInt!
+  # Index of the action inside a `DAO.Executed` log when this Transaction was
+  # produced from a batch execution. Null for transfers that come from a
+  # dedicated event (NativeTokenDeposited, ERC20 Transfer, ...).
+  actionIndex: Int
+  # ERC-721 / ERC-1155 only — the specific NFT id moved. Null for ERC-20
+  # and native transfers. For ERC-721, `value` is always 1 (per-NFT
+  # transfer); for ERC-1155 `value` carries the count.
+  tokenId: String
+}
+
+# Running balance per (DAO, token, chain). Native uses `0x000...000` as the
+# token address. `amount` is derived from Transaction events (deposits add,
+# withdrawals subtract). For most ERC-20s this matches on-chain balance;
+# rebase / wrapper / ERC777 edge cases are out of scope.
+type Asset {
+  id: ID!
+  chainId: Int!
+  dao: Dao! @index
+  daoAddress: String! @index
+  tokenAddress: String! @index
+  amount: BigInt!
+  blockNumber: Int!
+  blockTimestamp: Int!
+}
+
+# ==============================
 # Token & Delegation
 # ==============================
 
@@ -252,9 +630,54 @@ type Token {
   id: ID!
   chainId: Int!
   address: String! @index
+  # First-seen block context — when our indexer first wrote this Token row.
+  # Not the same as on-chain deployment; that would require a creation-tx
+  # lookup we don't do.
+  blockNumber: Int!
+  blockTimestamp: Int!
+  transactionHash: String!
+  # Detected from bytecode selector matching (ERC-20 / ERC-721). Defaults to
+  # `erc20` when called from the wildcard ERC20.Transfer handler if the
+  # detector returns nothing (some proxies obfuscate selectors).
+  type: TokenType! @index
+  # True if the contract implements ERC20Votes (`getVotes`, `getPastVotes`,
+  # `getPastTotalSupply`) OR if any indexed Plugin references this token via
+  # its `tokenAddress` field. The plugin attachment overrides bytecode-only
+  # detection (some governance tokens use non-standard interfaces).
+  isGovernance: Boolean! @index
+  # True if the contract implements the Aragon escrow-adapter interface
+  # (`escrow()` + `clock()`). These wrap an underlying token used by VE plugins.
+  isEscrowAdapter: Boolean!
+  # Heuristic-based spam classification — name/symbol-driven keyword + regex
+  # rules ported from legacy `TokenUtils.shouldMarkAsSpam`. Governance and
+  # escrow-adapter tokens are never marked spam regardless of score.
+  isSpam: Boolean! @index
+  spamScore: Int!
+  # Vote checkpointing mode for governance tokens (IERC6372). Null for
+  # non-governance tokens or contracts that don't implement CLOCK_MODE().
+  clockMode: ClockMode
+  # True if any indexed `Granted` permission shows the DAO holding
+  # MINT_PERMISSION on this token. Resolved via two paths: forward-flip when
+  # Granted fires after Token exists, backward-lookup when Token gets created
+  # after the permission was already granted.
+  mintableByDao: Boolean!
+  # ERC-20 metadata (best-effort RPC reads — null if the contract doesn't
+  # implement the function or returns garbage).
   name: String
   symbol: String
   decimals: Int
+  totalSupply: BigInt
+  # Wrapper detection — points to the underlying token if this is a wrapper
+  # (ERC-4626, escrow adapter, aToken/cToken-style). Null for plain tokens.
+  underlying: String
+  # EIP-1967 implementation slot if the token is behind a proxy. Null otherwise.
+  implementationAddress: String
+  # USD price snapshot, populated by an external enrichment service
+  # (CoinGecko / Alchemy Prices). Indexer never writes this. Consumers
+  # multiply `Asset.amount * Token.priceUsd` at GraphQL query time to
+  # derive `Dao.tvlUSD` (no need to materialise that field).
+  priceUsd: BigInt
+  priceUpdatedAt: Int
 }
 
 type DelegateChangedEvent {
@@ -287,17 +710,36 @@ type Lock {
   id: ID!
   chainId: Int!
   escrowAddress: String! @index
+  # Sibling addresses on the same VE chain — denormalised at deposit time
+  # from the parent Plugin's `votingEscrow` blob so a single Lock row can
+  # reconstruct the full VE pipeline. Mirrors legacy `Lock.exitQueueAddress`
+  # / `Lock.nftAddress`.
+  exitQueueAddress: String
+  nftAddress: String
   tokenId: String! @index
   memberAddress: String! @index
   amount: BigInt!
+  # VE-epoch metadata stamped at deposit time. Required for historical
+  # voting-power-at-epoch math (`bias - slope * (now - epochStartAt)`).
+  # Mirrors legacy `Lock.epochStartAt` / `Lock.totalLocked`.
+  epochStartAt: Int
+  totalLocked: BigInt
   blockNumber: Int!
   blockTimestamp: Int
   transactionHash: String!
+  # Flat status flags (kept for back-compat with existing queries).
   isWithdrawn: Boolean!
   withdrawnAt: Int
   exitQueued: Boolean!
   exitQueuedAt: Int
   exitCancelled: Boolean!
+  # Rich audit objects mirroring legacy `Lock.lockExit` / `Lock.lockWithdraw`:
+  #   `lockExit:     { status, transactionHash, blockNumber, exitDateAt, holder }`
+  #   `lockWithdraw: { status, transactionHash, blockNumber, totalLocked, amount, epochEndAt }`
+  # Set by the corresponding handler (`ExitQueue.ExitQueued/Cancelled`,
+  # `VotingEscrow.Withdraw`). Null while the lock is still active.
+  lockExit: Json
+  lockWithdraw: Json
 }
 
 type TokenDelegation {
@@ -363,7 +805,20 @@ type Campaign {
   chainId: Int!
   pluginAddress: String! @index
   campaignId: String! @index
+  # Address of the allocation-strategy contract that emits the campaign's
+  # `MerkleCampaignSet` / `MerkleCampaignUpdated` events. Indexed because
+  # those handlers look up the Campaign by strategy address (not by plugin).
+  allocationStrategy: String! @index
+  # Action encoder for the strategy's payout. Often the zero address.
+  # Mirrors legacy `Campaign.payoutEncoder`.
+  payoutEncoder: String
   metadataUri: String
+  # Parsed campaign metadata (legacy `Campaign.metadata.*`), populated from
+  # the IPFS payload by `parseCampaignMetadata`.
+  title: String
+  description: String
+  resources: Json
+  campaignType: String
   token: String
   startTime: BigInt
   endTime: BigInt
@@ -372,6 +827,27 @@ type Campaign {
   isEnded: Boolean!
   blockNumber: Int!
   transactionHash: String!
+  merkleRootLogs: [CampaignMerkleRootLog!]! @derivedFrom(field: "campaign")
+}
+
+# Audit log of every `MerkleCampaignSet` / `MerkleCampaignUpdated` event
+# emitted by an allocation strategy. Mirrors legacy `CampaignMerkleRoot` —
+# lets consumers reconstruct the merkle-root history of a campaign without
+# scanning all on-chain logs. The current root still lives on `Campaign.merkleRoot`.
+type CampaignMerkleRootLog {
+  id: ID!
+  chainId: Int!
+  campaign: Campaign! @index
+  campaignId: String! @index
+  pluginAddress: String! @index
+  allocationStrategy: String! @index
+  merkleRoot: String!
+  # Previous root for `MerkleCampaignUpdated`; null on the initial `Set`.
+  previousMerkleRoot: String
+  blockNumber: Int! @index
+  blockTimestamp: Int
+  transactionHash: String!
+  logIndex: Int!
 }
 
 # ==============================
@@ -387,6 +863,12 @@ type SelectorPermission {
   allowed: Boolean!
   blockNumber: Int!
   transactionHash: String!
+  # Decoded function name (without args), e.g. `transfer`. Null when the
+  # selector resolves to no known signature.
+  functionName: String
+  # Full canonical signature, e.g. `transfer(address,uint256)`. Comes from
+  # KNOWN_ABIS first, then 4byte directory. Null when both miss.
+  functionSig: String
 }
 
 type NativeTransferPermission {

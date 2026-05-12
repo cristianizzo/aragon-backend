@@ -11,6 +11,18 @@ See `AGENTS.md` for full project context, commands, and workflow.
 - Schema uses entity references (`collection: NftCollection!`); handlers use `_id` suffix (`collection_id: value`); never add `_id` to schema field names
 - Use pnpm, not npm
 - Run `TUI_OFF=true pnpm dev` for AI-friendly indexer output
+- All Ethereum addresses must be EIP-55 checksum (never `.toLowerCase()`); normalise via viem `getAddress()` at boundaries
+
+## Docs to keep in sync with code
+
+Some docs document non-obvious decisions and **must be updated** when the
+referenced code changes:
+
+| Doc | Update when you change... |
+|---|---|
+| `docs/CHAIN_INTEGRATIONS.md` | per-chain explorer routing, price-API mapping, RPC provider priority, Tenderly config, or the supported-chain list (`src/config/index.ts` `RPC.URLS`) |
+| `docs/MIGRATION_GAPS.md` | a P0/P1/P2/P3 gap is closed (handler wired, RPC discovery added, etc.) — move the item from the gap list to "completed" |
+| `docs/HANDLER_GAPS.md` | handler-level coverage changes (events added/removed) |
 
 ## Skills
 
