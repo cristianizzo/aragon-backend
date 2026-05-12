@@ -8,9 +8,10 @@ import Bottleneck from "bottleneck";
  * helpers that wrap each provider's HTTP transport.
  *
  * Limits are conservative defaults sized to the free-tier quotas of each
- * public API. They can be overridden via env (`<PROVIDER>_MAX_CONCURRENT`,
- * `<PROVIDER>_MIN_TIME_MS`) to let operators dial concurrency up when
- * running with paid keys.
+ * public API. They can be overridden via env (`ENVIO_<PROVIDER>_MAX_CONCURRENT`,
+ * `ENVIO_<PROVIDER>_MIN_TIME_MS`) to let operators dial concurrency up when
+ * running with paid keys. The `ENVIO_` prefix matches the rest of the
+ * indexer's env convention so the Hosted Service forwards them through.
  *
  * Why per-(provider, chainId) and not per-provider?
  *   Etherscan and friends apply quotas per API key. Different chains share
@@ -47,15 +48,30 @@ const num = (key: string, fallback: number): number => {
 // req/s, 4byte directory ~5 req/s. ZkSync / Blockscout / Subscan have no
 // published per-key limit but we throttle anyway to avoid IP bans.
 const DEFAULTS: Record<ProviderKind, Limits> = {
-  etherscan: { maxConcurrent: num("ETHERSCAN_MAX_CONCURRENT", 5), minTimeMs: num("ETHERSCAN_MIN_TIME_MS", 200) },
-  routescan: { maxConcurrent: num("ROUTESCAN_MAX_CONCURRENT", 5), minTimeMs: num("ROUTESCAN_MIN_TIME_MS", 100) },
-  zksync: {
-    maxConcurrent: num("ZKSYNC_EXPLORER_MAX_CONCURRENT", 3),
-    minTimeMs: num("ZKSYNC_EXPLORER_MIN_TIME_MS", 200),
+  etherscan: {
+    maxConcurrent: num("ENVIO_ETHERSCAN_MAX_CONCURRENT", 5),
+    minTimeMs: num("ENVIO_ETHERSCAN_MIN_TIME_MS", 200),
   },
-  blockscout: { maxConcurrent: num("BLOCKSCOUT_MAX_CONCURRENT", 3), minTimeMs: num("BLOCKSCOUT_MIN_TIME_MS", 200) },
-  subscan: { maxConcurrent: num("SUBSCAN_MAX_CONCURRENT", 2), minTimeMs: num("SUBSCAN_MIN_TIME_MS", 500) },
-  fourByte: { maxConcurrent: num("FOUR_BYTE_MAX_CONCURRENT", 4), minTimeMs: num("FOUR_BYTE_MIN_TIME_MS", 250) },
+  routescan: {
+    maxConcurrent: num("ENVIO_ROUTESCAN_MAX_CONCURRENT", 5),
+    minTimeMs: num("ENVIO_ROUTESCAN_MIN_TIME_MS", 100),
+  },
+  zksync: {
+    maxConcurrent: num("ENVIO_ZKSYNC_EXPLORER_MAX_CONCURRENT", 3),
+    minTimeMs: num("ENVIO_ZKSYNC_EXPLORER_MIN_TIME_MS", 200),
+  },
+  blockscout: {
+    maxConcurrent: num("ENVIO_BLOCKSCOUT_MAX_CONCURRENT", 3),
+    minTimeMs: num("ENVIO_BLOCKSCOUT_MIN_TIME_MS", 200),
+  },
+  subscan: {
+    maxConcurrent: num("ENVIO_SUBSCAN_MAX_CONCURRENT", 2),
+    minTimeMs: num("ENVIO_SUBSCAN_MIN_TIME_MS", 500),
+  },
+  fourByte: {
+    maxConcurrent: num("ENVIO_FOUR_BYTE_MAX_CONCURRENT", 4),
+    minTimeMs: num("ENVIO_FOUR_BYTE_MIN_TIME_MS", 250),
+  },
 };
 
 const limiters: Map<string, Bottleneck> = new Map();
