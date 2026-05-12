@@ -28,7 +28,7 @@
     "winston-transport": "^4.9.0"
   },
   "optionalDependencies": {
-    "generated": "./aragon-indexer/../generated"
+    "generated": "link:./generated"
   },
   "engines": {
     "node": ">=22.0.0"
