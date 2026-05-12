@@ -1,42 +1,49 @@
 import { GaugeVoter } from "generated";
+import { getAddress } from "viem";
+import { GaugeStatus, GaugeVoteKind } from "../enums";
+import { gaugeId, gaugeVoteId } from "../ids";
+import { addMember } from "../services/member";
+import { applyPluginMetadata } from "../services/pluginMetadata";
 
 GaugeVoter.GaugeCreated.handler(async ({ event, context }) => {
   const chainId = event.chainId;
-  const pluginAddress = event.srcAddress;
-  const gaugeAddress = event.params.gauge;
-  const id = `${chainId}-${gaugeAddress}`;
+  const pluginAddress = getAddress(event.srcAddress);
+  const gaugeAddress = getAddress(event.params.gauge);
+  const creatorAddress = getAddress(event.params.creator);
 
   context.Gauge.set({
-    id,
+    id: gaugeId(chainId, gaugeAddress),
     chainId,
     address: gaugeAddress,
     pluginAddress,
-    creatorAddress: event.params.creator,
+    creatorAddress,
     metadataUri: event.params.metadataURI || undefined,
-    status: "Active",
+    status: GaugeStatus.Active,
     blockNumber: event.block.number,
     transactionHash: event.transaction.hash,
   });
+
+  await addMember(context, { address: creatorAddress, blockNumber: event.block.number });
 });
 
 GaugeVoter.GaugeActivated.handler(async ({ event, context }) => {
-  const id = `${event.chainId}-${event.params.gauge}`;
+  const id = gaugeId(event.chainId, event.params.gauge);
   const gauge = await context.Gauge.get(id);
   if (gauge) {
-    context.Gauge.set({ ...gauge, status: "Active" });
+    context.Gauge.set({ ...gauge, status: GaugeStatus.Active });
   }
 });
 
 GaugeVoter.GaugeDeactivated.handler(async ({ event, context }) => {
-  const id = `${event.chainId}-${event.params.gauge}`;
+  const id = gaugeId(event.chainId, event.params.gauge);
   const gauge = await context.Gauge.get(id);
   if (gauge) {
-    context.Gauge.set({ ...gauge, status: "Deactivated" });
+    context.Gauge.set({ ...gauge, status: GaugeStatus.Deactivated });
   }
 });
 
 GaugeVoter.GaugeMetadataUpdated.handler(async ({ event, context }) => {
-  const id = `${event.chainId}-${event.params.gauge}`;
+  const id = gaugeId(event.chainId, event.params.gauge);
   const gauge = await context.Gauge.get(id);
   if (gauge) {
     context.Gauge.set({
@@ -48,42 +55,58 @@ GaugeVoter.GaugeMetadataUpdated.handler(async ({ event, context }) => {
 
 GaugeVoter.Voted.handler(async ({ event, context }) => {
   const chainId = event.chainId;
-  const pluginAddress = event.srcAddress;
+  const pluginAddress = getAddress(event.srcAddress);
+  const gaugeAddress = getAddress(event.params.gauge);
+  const voterAddress = getAddress(event.params.voter);
   const epoch = event.params.epoch.toString();
-  const id = `${chainId}-${event.params.gauge}-${event.params.voter}-${epoch}-${event.logIndex}`;
 
   context.GaugeVote.set({
-    id,
+    id: gaugeVoteId(chainId, gaugeAddress, voterAddress, epoch, event.logIndex),
     chainId,
     pluginAddress,
-    gaugeAddress: event.params.gauge,
-    voterAddress: event.params.voter,
+    gaugeAddress,
+    voterAddress,
     epoch,
     votingPower: event.params.votingPowerCastForGauge,
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
   });
+
+  await addMember(context, { address: voterAddress, blockNumber: event.block.number });
 });
 
 GaugeVoter.Reset.handler(async ({ event, context }) => {
-  // Reset removes voting power from a gauge for a voter in an epoch
-  // We log it as a GaugeVote with 0 voting power for tracking
   const chainId = event.chainId;
-  const pluginAddress = event.srcAddress;
+  const pluginAddress = getAddress(event.srcAddress);
+  const gaugeAddress = getAddress(event.params.gauge);
+  const voterAddress = getAddress(event.params.voter);
   const epoch = event.params.epoch.toString();
-  const id = `${chainId}-${event.params.gauge}-${event.params.voter}-${epoch}-reset-${event.logIndex}`;
 
   context.GaugeVote.set({
-    id,
+    id: gaugeVoteId(chainId, gaugeAddress, voterAddress, epoch, event.logIndex, GaugeVoteKind.Reset),
     chainId,
     pluginAddress,
-    gaugeAddress: event.params.gauge,
-    voterAddress: event.params.voter,
+    gaugeAddress,
+    voterAddress,
     epoch,
     votingPower: 0n,
     blockNumber: event.block.number,
     blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
+  });
+
+  await addMember(context, { address: voterAddress, blockNumber: event.block.number });
+});
+
+GaugeVoter.GaugeVoterMetadataSet.handler(async ({ event, context }) => {
+  await applyPluginMetadata(context, {
+    chainId: event.chainId,
+    pluginAddress: event.srcAddress,
+    metadata: event.params.metadata,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
   });
 });

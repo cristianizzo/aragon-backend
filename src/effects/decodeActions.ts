@@ -1,10 +1,18 @@
 import { createEffect, S } from "envio";
-import { type DecodedAction, decodeActions } from "../helpers/actionDecoder";
+import { decodeActions } from "../helpers/actionDecoder";
 
 /**
- * Effect to decode proposal actions.
- * Uses a multi-stage pipeline: Known ABIs → Proxy Detection → Etherscan → 4bytes → Unknown
- * Results are cached per unique input (same actions array = cache hit).
+ * Decode proposal actions through a multi-stage pipeline (Known ABIs →
+ * Proxy Detection → Etherscan → 4bytes → Unknown).
+ *
+ * Output is **stringified JSON** rather than the raw array — `S.unknown`
+ * + `cache: true` does not round-trip through Envio's effect cache
+ * table in v3.0.0-alpha.18 (the cache writer's schema converter rejects
+ * non-scalar shapes with `Expected undefined | null, received [...]`).
+ * Storing as a string avoids the converter entirely. Caller must
+ * `JSON.parse` the result; consumers that put the value straight into a
+ * `Json` schema column should pass the string through `safeJsonParse`
+ * first.
  */
 export const decodeProposalActions = createEffect(
   {
@@ -20,17 +28,15 @@ export const decodeProposalActions = createEffect(
       chainId: S.number,
       daoAddress: S.string,
     }),
-    output: S.union([S.unknown, null]),
+    output: S.union([S.string, null]),
     cache: true,
     rateLimit: false,
   },
   async ({ input }) => {
+    if (!input.actions || input.actions.length === 0) return null;
     try {
-      if (!input.actions || input.actions.length === 0) return null;
-
       const decoded = await decodeActions(input.actions, input.chainId, input.daoAddress);
-
-      return decoded as any;
+      return JSON.stringify(decoded);
     } catch {
       return null;
     }

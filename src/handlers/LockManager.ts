@@ -1,10 +1,13 @@
 import { LockManager } from "generated";
+import { getAddress } from "viem";
+import { lockToVoteMemberId } from "../ids";
+import { addMember } from "../services/member";
 
 LockManager.BalanceLocked.handler(async ({ event, context }) => {
   const chainId = event.chainId;
-  const lockManagerAddress = event.srcAddress;
-  const memberAddress = event.params.voter;
-  const id = `${chainId}-${lockManagerAddress}-${memberAddress}`;
+  const lockManagerAddress = getAddress(event.srcAddress);
+  const memberAddress = getAddress(event.params.voter);
+  const id = lockToVoteMemberId(chainId, lockManagerAddress, memberAddress);
 
   const existing = await context.LockToVoteMember.get(id);
   const currentAmount = existing?.lockedAmount ?? 0n;
@@ -16,14 +19,13 @@ LockManager.BalanceLocked.handler(async ({ event, context }) => {
     memberAddress,
     lockedAmount: currentAmount + event.params.amount,
   });
+
+  await addMember(context, { address: memberAddress, blockNumber: event.block.number });
 });
 
 LockManager.BalanceUnlocked.handler(async ({ event, context }) => {
-  const chainId = event.chainId;
-  const lockManagerAddress = event.srcAddress;
-  const memberAddress = event.params.voter;
-  const id = `${chainId}-${lockManagerAddress}-${memberAddress}`;
-
+  const memberAddress = getAddress(event.params.voter);
+  const id = lockToVoteMemberId(event.chainId, event.srcAddress, memberAddress);
   const existing = await context.LockToVoteMember.get(id);
   if (!existing) return;
 
@@ -32,4 +34,6 @@ LockManager.BalanceUnlocked.handler(async ({ event, context }) => {
     ...existing,
     lockedAmount: newAmount < 0n ? 0n : newAmount,
   });
+
+  await addMember(context, { address: memberAddress, blockNumber: event.block.number });
 });

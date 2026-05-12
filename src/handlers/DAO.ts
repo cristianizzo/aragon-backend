@@ -1,98 +1,158 @@
-import { DAO } from "generated";
-import { safeJsonParse, ZERO_ADDRESS } from "../constants";
-import { fetchDaoMetadata } from "../effects/ipfs";
-import { extractIpfsCid } from "../utils/metadata";
+import { DAO, type HandlerContext } from "generated";
+import { getAddress } from "viem";
+import { NATIVE_AS_ERC20_CHAINS, ZERO_ADDRESS } from "../constants";
+import { TransactionSide, TransactionType } from "../enums";
+import { updateDaoAssets } from "../services/asset";
+import { applyDaoMetadata, applyDaoUpgrade } from "../services/dao";
+import { recordTransaction } from "../services/transaction";
 
-DAO.MetadataSet.handler(async ({ event, context }) => {
-  const chainId = event.chainId;
-  const daoAddress = event.srcAddress;
-  const daoId = `${chainId}-${daoAddress}`;
+/**
+ * Handlers that mutate the `Dao` entity itself plus its native treasury.
+ * Permission-domain events (`Granted` / `Revoked`) live in `Permission.ts`
+ * even though they're emitted by the same DAO contract — splitting by the
+ * entity each handler operates on, not by the event source.
+ */
 
-  const dao = await context.Dao.get(daoId);
-  if (!dao) return;
+DAO.MetadataSet.handler(async ({ event, context }) =>
+  applyDaoMetadata(context, {
+    chainId: event.chainId,
+    daoAddress: event.srcAddress,
+    metadata: event.params.metadata,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+  }),
+);
 
-  const cid = extractIpfsCid(event.params.metadata);
-  if (!cid) return;
-
-  const metadata = await context.effect(fetchDaoMetadata, cid);
-
-  context.Dao.set({
-    ...dao,
-    metadataUri: `ipfs://${cid}`,
-    name: metadata?.name ?? dao.name,
-    description: metadata?.description ?? dao.description,
-    avatar: metadata?.avatar ?? dao.avatar,
-    links: safeJsonParse(metadata?.linksJson) ?? dao.links,
-  });
-});
+DAO.Upgraded.handler(async ({ event, context }) =>
+  applyDaoUpgrade(context, {
+    chainId: event.chainId,
+    daoAddress: event.srcAddress,
+    implementationAddress: event.params.implementation,
+    transactionHash: event.transaction.hash,
+  }),
+);
 
 DAO.NativeTokenDeposited.handler(async ({ event, context }) => {
-  // Log native token deposits — can be used for TVL tracking
-  // The DAO entity already exists from DAORegistered
-  // No entity update needed for basic indexing
+  if (NATIVE_AS_ERC20_CHAINS.has(event.chainId)) return;
+  const amount = event.params.amount;
+  if (amount === 0n) return;
+
+  const { chainId } = event;
+  const daoAddress = getAddress(event.srcAddress);
+  const sender = getAddress(event.params.sender);
+
+  recordTransaction(context, {
+    chainId,
+    daoAddress,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+    side: TransactionSide.Deposit,
+    type: TransactionType.NativeToken,
+    fromAddress: sender,
+    toAddress: daoAddress,
+    tokenAddress: ZERO_ADDRESS,
+    value: amount,
+  });
+
+  await updateDaoAssets(context, {
+    chainId,
+    daoAddress,
+    tokenAddress: ZERO_ADDRESS,
+    side: TransactionSide.Deposit,
+    amount,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+  });
 });
 
-// Register condition addresses for ExecuteSelectorCondition events
-DAO.Granted.contractRegister(({ event, context }) => {
-  const condition = event.params.condition;
-  if (condition && condition !== ZERO_ADDRESS) {
-    context.addExecuteSelectorCondition(condition);
+/**
+ * Native withdraws live inside `execute()` calls — the `Executed` log carries
+ * an array of `(to, value, data)` actions. Any action with non-zero `value`
+ * transfers native out of the DAO. Multiple actions share one `logIndex` —
+ * disambiguated via `actionIndex` in the Transaction id.
+ *
+ * V1 and V2 of the event differ only in trailing fields (`allowFailureMap` is
+ * v1-only) — the `actions` array sits at the same position in both. Handlers
+ * for both signatures funnel into this helper.
+ */
+async function recordNativeWithdraws(
+  context: HandlerContext,
+  args: {
+    chainId: number;
+    srcAddress: string;
+    actions: ReadonlyArray<readonly [string, bigint, string]>;
+    blockNumber: number;
+    blockTimestamp: number;
+    transactionHash: string;
+    logIndex: number;
+  },
+): Promise<void> {
+  if (NATIVE_AS_ERC20_CHAINS.has(args.chainId)) return;
+
+  const { chainId } = args;
+  const daoAddress = getAddress(args.srcAddress);
+  const txCommon = {
+    chainId,
+    daoAddress,
+    blockNumber: args.blockNumber,
+    blockTimestamp: args.blockTimestamp,
+    transactionHash: args.transactionHash,
+    logIndex: args.logIndex,
+    side: TransactionSide.Withdraw,
+    type: TransactionType.NativeToken,
+    fromAddress: daoAddress,
+    tokenAddress: ZERO_ADDRESS,
+  };
+
+  for (let actionIndex = 0; actionIndex < args.actions.length; actionIndex++) {
+    const action = args.actions[actionIndex];
+    if (!action) continue;
+    const [to, value] = action;
+    if (value === 0n) continue;
+
+    recordTransaction(context, {
+      ...txCommon,
+      toAddress: getAddress(to),
+      value,
+      actionIndex,
+    });
+
+    await updateDaoAssets(context, {
+      chainId,
+      daoAddress,
+      tokenAddress: ZERO_ADDRESS,
+      side: TransactionSide.Withdraw,
+      amount: value,
+      blockNumber: args.blockNumber,
+      blockTimestamp: args.blockTimestamp,
+    });
   }
-});
+}
 
-DAO.Granted.handler(async ({ event, context }) => {
-  const chainId = event.chainId;
-  const daoAddress = event.srcAddress;
-  const daoId = `${chainId}-${daoAddress}`;
-
-  const dao = await context.Dao.get(daoId);
-  if (!dao) return;
-
-  const id = `${chainId}-${event.transaction.hash}-${event.logIndex}`;
-
-  context.DaoPermission.set({
-    id,
-    chainId,
-    dao_id: daoId,
-    daoAddress,
+DAO.Executed.handler(async ({ event, context }) =>
+  recordNativeWithdraws(context, {
+    chainId: event.chainId,
+    srcAddress: event.srcAddress,
+    actions: event.params.actions,
     blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
     logIndex: event.logIndex,
-    permissionId: event.params.permissionId,
-    whoAddress: event.params.who,
-    whereAddress: event.params.where,
-    event: "Granted",
-    conditionAddress: event.params.condition || undefined,
-  });
-});
+  }),
+);
 
-DAO.Revoked.handler(async ({ event, context }) => {
-  const chainId = event.chainId;
-  const daoAddress = event.srcAddress;
-  const daoId = `${chainId}-${daoAddress}`;
-
-  const dao = await context.Dao.get(daoId);
-  if (!dao) return;
-
-  const id = `${chainId}-${event.transaction.hash}-${event.logIndex}`;
-
-  context.DaoPermission.set({
-    id,
-    chainId,
-    dao_id: daoId,
-    daoAddress,
+DAO.ExecutedV2.handler(async ({ event, context }) =>
+  recordNativeWithdraws(context, {
+    chainId: event.chainId,
+    srcAddress: event.srcAddress,
+    actions: event.params.actions,
     blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
     transactionHash: event.transaction.hash,
     logIndex: event.logIndex,
-    permissionId: event.params.permissionId,
-    whoAddress: event.params.who,
-    whereAddress: event.params.where,
-    event: "Revoked",
-    conditionAddress: undefined,
-  });
-});
-
-DAO.Executed.handler(async ({ event, context }) => {
-  // Log execution events — tracks on-chain actions executed by DAOs
-  // Can be extended to decode action data in the future
-});
+  }),
+);

@@ -1,16 +1,16 @@
 import { PluginRepoRegistry } from "generated";
+import { getAddress } from "viem";
+import { pluginRepoId } from "../ids";
 
 PluginRepoRegistry.PluginRepoRegistered.handler(async ({ event, context }) => {
   const chainId = event.chainId;
-  const id = `${chainId}-${event.params.pluginRepo}`;
-
-  const existing = await context.PluginRepo.get(id);
-  if (existing) return;
+  const address = getAddress(event.params.pluginRepo);
+  const id = pluginRepoId(chainId, address);
 
   context.PluginRepo.set({
     id,
     chainId,
-    address: event.params.pluginRepo,
+    address,
     subdomain: event.params.subdomain,
     blockNumber: event.block.number,
     transactionHash: event.transaction.hash,
