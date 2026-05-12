@@ -2,7 +2,7 @@ import type { HandlerContext } from "generated";
 import { getAddress } from "viem";
 import { type AddressBrand, detectAddressBrand } from "../effects/addressBrand";
 import logger from "../helpers/logger";
-import { pluginId, pluginParentLinkId, proposalId, settingId, subProposalLinkId } from "../ids";
+import { pluginId, pluginParentLinkId, proposalId, settingId, subProposalLinkId } from "../utils/ids";
 
 const llo = logger.logMeta.bind(null, { service: "services:sppStages" });
 

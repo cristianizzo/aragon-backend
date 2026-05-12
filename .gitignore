@@ -57,6 +57,14 @@ migration/
 # the indexer source). Each developer can keep their own; not for the PR.
 scripts/
 
+# Internal docs + agent harness — kept locally for AI-assisted workflows
+# but excluded from the upstream repo to avoid polluting it with
+# Claude/Codex specific scaffolding.
+docs/
+AGENTS.md
+CLAUDE.md
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

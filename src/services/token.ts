@@ -4,7 +4,7 @@ import { MINT_PERMISSION_ID, ZERO_ADDRESS } from "../constants";
 import { fetchTokenMetadata } from "../effects/token";
 import { type ClockMode, PermissionEvent, TokenType } from "../enums";
 import logger from "../helpers/logger";
-import { tokenId } from "../ids";
+import { tokenId } from "../utils/ids";
 import { shouldMarkAsSpam } from "../utils/spam";
 
 const llo = logger.logMeta.bind(null, { service: "services:token" });

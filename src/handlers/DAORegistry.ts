@@ -2,9 +2,9 @@ import { DAORegistry } from "generated";
 import { getAddress } from "viem";
 import { fetchDaoVersion, fetchImplementationAddress } from "../effects/dao";
 import logger from "../helpers/logger";
-import { daoId } from "../ids";
 import { addMember } from "../services/member";
 import { buildDaoEnsName } from "../utils/ens";
+import { daoId } from "../utils/ids";
 import { validateString } from "../utils/validate";
 
 const llo = logger.logMeta.bind(null, { service: "handlers:DAORegistry" });

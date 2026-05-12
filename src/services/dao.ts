@@ -4,7 +4,7 @@ import { ZERO_ADDRESS } from "../constants";
 import { fetchDaoVersion } from "../effects/dao";
 import { fetchIpfsJson } from "../effects/ipfs";
 import logger from "../helpers/logger";
-import { daoId, eventLogId } from "../ids";
+import { daoId, eventLogId } from "../utils/ids";
 import { extractIpfsCid, parseDaoMetadata } from "../utils/metadata";
 
 const llo = logger.logMeta.bind(null, { service: "services:dao" });

@@ -3,10 +3,10 @@ import { getAddress } from "viem";
 import { fetchEscrowSettings } from "../effects/escrowSettings";
 import { fetchTokenTotalSupplyAtBlock } from "../effects/token";
 import { PluginInterfaceType } from "../enums";
-import { pluginId, settingId } from "../ids";
 import { applyPluginMetadata } from "../services/pluginMetadata";
 import { createProposal, executeProposal } from "../services/proposal";
 import { clearVote, recordVote } from "../services/vote";
+import { pluginId, settingId } from "../utils/ids";
 
 LockToVote.LockToVoteVoteCast.handler(async ({ event, context }) => {
   const chainId = event.chainId;

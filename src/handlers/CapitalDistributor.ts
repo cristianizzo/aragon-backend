@@ -1,9 +1,9 @@
 import { CapitalDistributor } from "generated";
 import { getAddress } from "viem";
 import { fetchIpfsJson } from "../effects/ipfs";
-import { campaignRewardId, campaignId as makeCampaignId } from "../ids";
 import { addMember } from "../services/member";
 import { applyPluginMetadata } from "../services/pluginMetadata";
+import { campaignRewardId, campaignId as makeCampaignId } from "../utils/ids";
 import { extractIpfsCid, parseCampaignMetadata } from "../utils/metadata";
 
 // Register the campaign's allocation-strategy contract so its

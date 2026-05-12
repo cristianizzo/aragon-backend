@@ -1,7 +1,7 @@
 import { LockManager } from "generated";
 import { getAddress } from "viem";
-import { lockToVoteMemberId } from "../ids";
 import { addMember } from "../services/member";
+import { lockToVoteMemberId } from "../utils/ids";
 
 LockManager.BalanceLocked.handler(async ({ event, context }) => {
   const chainId = event.chainId;

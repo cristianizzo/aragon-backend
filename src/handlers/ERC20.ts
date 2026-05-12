@@ -1,10 +1,10 @@
 import { ERC20 } from "generated";
 import { getAddress } from "viem";
 import { TransactionSide, TransactionType } from "../enums";
-import { daoId } from "../ids";
 import { updateDaoAssets } from "../services/asset";
 import { addToken } from "../services/token";
 import { recordTransaction } from "../services/transaction";
+import { daoId } from "../utils/ids";
 
 // Wildcard subscription: every ERC-20 `Transfer` on every contract on every
 // configured chain hits this handler. We filter at handler-time on

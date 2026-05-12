@@ -1,7 +1,6 @@
 import { PluginSetupProcessor } from "generated";
 import { getAddress } from "viem";
 import { PluginInterfaceType, PluginSetupEvent, PluginStatus } from "../enums";
-import { daoId } from "../ids";
 import {
   logPluginSetupApplied,
   logPluginSetupPrepared,
@@ -9,6 +8,7 @@ import {
   stubPluginOnInstallPrepared,
 } from "../services/pluginInstall";
 import { detectPluginByBytecode } from "../utils/bytecodeDetector";
+import { daoId } from "../utils/ids";
 import { parsePermissions, tokenFromHelpers } from "../utils/plugin";
 import { discoverLockManagerAddress, discoverVeContracts } from "../utils/veDiscovery";
 

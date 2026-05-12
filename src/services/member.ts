@@ -2,7 +2,7 @@ import type { HandlerContext } from "generated";
 import { ZERO_ADDRESS } from "../constants";
 import { fetchEnsForAddress } from "../effects/ens";
 import logger from "../helpers/logger";
-import { memberId } from "../ids";
+import { memberId } from "../utils/ids";
 
 const llo = logger.logMeta.bind(null, { service: "services:member" });
 

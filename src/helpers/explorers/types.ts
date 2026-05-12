@@ -29,9 +29,12 @@ export interface ExplorerProvider {
   kind: ExplorerKind;
   /**
    * Returns `null` when the provider can't service this chain (missing URL,
-   * unsupported network) so the router can fall through. Returns a result
-   * with `abi: null` when the contract is genuinely unverified — that is
-   * NOT a failure and the router should treat it as a final answer.
+   * unsupported network) so the router falls through to the next provider.
+   * Returns a result with `abi: null` when the provider responded but the
+   * contract is unverified or the response was unparseable — the router
+   * (`./index.ts:fetchContractSourceCode`) treats `abi: null` the same as
+   * `null` and keeps walking the per-chain priority list, only returning
+   * the empty shape if every provider misses.
    */
   fetchSourceCode(chainId: number, address: string): Promise<SourceCodeResult | null>;
 }

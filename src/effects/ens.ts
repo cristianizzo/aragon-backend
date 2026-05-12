@@ -13,13 +13,15 @@ const baseRegistrarAbi = parseAbi(["function nameExpires(uint256 id) view return
  * Reverse-lookup an address to its primary ENS name + avatar on mainnet,
  * with forward verification (viem's `getEnsName` already does reverse +
  * forward via the Universal Resolver). For `.eth` second-level domains we
- * additionally check the BaseRegistrar expiration. `.dao.eth` subdomains
- * skip expiration since Aragon's `dao.eth` manager controls them, not the
- * public ENS registry.
+ * additionally fetch the BaseRegistrar expiration timestamp so consumers
+ * can decide whether to trust the name. `.dao.eth` subdomains and non-
+ * `.eth` names have no expiration.
  *
- * Returns `{ name, avatar }` — both individually nullable. The avatar
- * lookup runs only when name resolution succeeds (no point fetching the
- * avatar for an address with no ENS).
+ * Returns `{ name, avatar, expiresAt }`. `expiresAt` is the on-chain
+ * BaseRegistrar timestamp in seconds (null when not applicable). Time-
+ * dependent comparison (`expiresAt * 1000 <= Date.now()`) is the
+ * caller's job — it can't live inside this effect because the result is
+ * cached and a `Date.now()` check would freeze in the cached output.
  */
 export const fetchEnsForAddress = createEffect(
   {
@@ -29,6 +31,7 @@ export const fetchEnsForAddress = createEffect(
       S.schema({
         name: S.union([S.string, null]),
         avatar: S.union([S.string, null]),
+        expiresAt: S.union([S.number, null]),
       }),
       null,
     ]),
@@ -39,29 +42,28 @@ export const fetchEnsForAddress = createEffect(
     try {
       const client = getClient(ENS_CHAIN_ID);
       const name = await client.getEnsName({ address: input.address as `0x${string}` });
-      if (!name) return { name: null, avatar: null };
+      if (!name) return { name: null, avatar: null, expiresAt: null };
 
       // Aragon-managed dao.eth subdomains aren't on the public registry — no
-      // expiration to check. Same for non-.eth names (we don't expire those).
+      // expiration to fetch. Same for non-.eth names.
       const isExempt = !name.endsWith(".eth") || name.endsWith(".dao.eth");
 
-      // Only check expiration for second-level .eth (e.g., "vitalik.eth").
+      // Only fetch expiration for second-level .eth (e.g., "vitalik.eth").
       // Deeper subdomains (e.g., "wallet.vitalik.eth") inherit lifetime from
       // the parent and aren't tracked by BaseRegistrar.
       const [label, tld, ...rest] = name.split(".");
-      const checkExpiry = !isExempt && label && tld === "eth" && rest.length === 0;
+      const fetchExpiry = !isExempt && label && tld === "eth" && rest.length === 0;
 
-      if (checkExpiry && label) {
+      let expiresAt: number | null = null;
+      if (fetchExpiry && label) {
         const labelHash = keccak256(toHex(label));
-        const expiresAt = await client.readContract({
+        const onchain = await client.readContract({
           address: BASE_REGISTRAR,
           abi: baseRegistrarAbi,
           functionName: "nameExpires",
           args: [BigInt(labelHash)],
         });
-        if (Number(expiresAt) * 1000 <= Date.now()) {
-          return { name: null, avatar: null };
-        }
+        expiresAt = Number(onchain);
       }
 
       // Avatar lookup is best-effort — failures (no record, IPFS gateway
@@ -73,9 +75,19 @@ export const fetchEnsForAddress = createEffect(
         /* ignore */
       }
 
-      return { name, avatar };
+      return { name, avatar, expiresAt };
     } catch {
       return null;
     }
   },
 );
+
+/**
+ * Convenience wrapper: returns `{ name, avatar }` with `name` nulled out
+ * when the name has expired against the current wall clock. Use this from
+ * handlers/services that want the time-checked answer; the underlying
+ * Effect stays cache-safe because the comparison happens outside it.
+ */
+export function ensIsExpired(expiresAt: number | null | undefined, nowMs = Date.now()): boolean {
+  return expiresAt !== null && expiresAt !== undefined && expiresAt * 1000 <= nowMs;
+}

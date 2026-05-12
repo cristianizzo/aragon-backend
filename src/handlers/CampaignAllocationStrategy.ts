@@ -1,7 +1,7 @@
 import { CampaignAllocationStrategy } from "generated";
 import { getAddress } from "viem";
 import logger from "../helpers/logger";
-import { campaignMerkleRootLogId } from "../ids";
+import { campaignMerkleRootLogId } from "../utils/ids";
 
 const llo = logger.logMeta.bind(null, { service: "handlers:CampaignAllocationStrategy" });
 

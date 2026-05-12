@@ -2,7 +2,7 @@ import type { HandlerContext } from "generated";
 import { getAddress } from "viem";
 import { TransactionSide } from "../enums";
 import logger from "../helpers/logger";
-import { assetId, daoId } from "../ids";
+import { assetId, daoId } from "../utils/ids";
 
 const llo = logger.logMeta.bind(null, { service: "services:asset" });
 

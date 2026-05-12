@@ -3,9 +3,9 @@ import { GaugeVoter } from "generated";
 import { getAddress } from "viem";
 import { fetchIpfsJson } from "../effects/ipfs";
 import { GaugeStatus, GaugeVoteKind } from "../enums";
-import { canonicalGaugeVoteId, gaugeId, gaugeMetricsId, gaugeVoteId } from "../ids";
 import { addMember } from "../services/member";
 import { applyPluginMetadata } from "../services/pluginMetadata";
+import { canonicalGaugeVoteId, gaugeId, gaugeMetricsId, gaugeVoteId } from "../utils/ids";
 import { parseDaoMetadata } from "../utils/metadata";
 
 /**
