@@ -1,376 +1,322 @@
-# Migration Gaps — Legacy App-Backend vs Envio Indexer
+# Migration Gaps — Legacy App-Backend (`main` @ v0.23.1) vs Envio Indexer
 
-## Flow 1: DAO Deployment — Gap Analysis
+Last refreshed by walking the legacy `main` branch (commit `ef5c65d8`,
+release `0.23.1`) against the current state of `aragon-indexer`. Items
+that were on previous versions of this doc but are now implemented have
+been **removed** — this list is the live punch list of work remaining,
+nothing more.
 
-| Feature | Legacy Backend | Envio Indexer | Status |
-|---|---|---|---|
-| **DAO Registration** | Create DAO doc | Create Dao entity | Done |
-| **Metadata from IPFS** | Fetch name/desc/avatar/links | Same | Done |
-| **Extra metadata fields** | `processKey`, `stageNames`, `blockedCountries`, `termsConditionsUrl`, `enableOfacCheck` | Not stored | **Missing** |
-| **Implementation address** | RPC: `getImplementationAddress()` | Not fetched | **Missing** |
-| **DAO version** | RPC: `getDaoOsVersion()` | Not fetched | **Missing** |
-| **ENS resolution** | `EnsHelper.getDaoEns()` | Not fetched | **Missing** |
-| **isActive/isHidden/isSupported** | Stored on DAO | Not tracked | **Missing** |
-| **Permissions (Granted/Revoked)** | Store DaoPermission + member creation + DAO linking | Store DaoPermission only | **Partial** |
-| **DAO Linking (parent/child)** | Bidirectional linking via acknowledgement permissions | Not implemented | **Missing** |
-| **NativeTokenDeposited** | Creates Transaction entity | Empty handler | **Missing** |
-| **Executed event** | Checks for DAO upgrades, queues asset/tx discovery | Empty handler | **Missing** |
-| **Treasury/Asset tracking** | Native + ERC20 balances, USD values, TVL | Not implemented | **Missing** |
-| **Transaction tracking** | Incoming/outgoing ERC20 + native transfers | Not implemented | **Missing** |
-| **Member creation** | Creates base Member for creator on registration | Not done | **Missing** |
-| **DAO Metrics** | tvlUSD, proposalsCreated, proposalsExecuted, uniqueVoters, votes, members | proposalCount, proposalsExecuted, uniqueVoters, voteCount, memberCount (no tvlUSD) | **Partial** |
-| **Action decoding** | Async queue-based | Effect-based (at ProposalCreated time) | Done (different approach) |
-| **Selector permissions** | Decoded with function signature/NatSpec | Stored but not decoded | **Partial** |
+Severity scale:
+- **P0** — feature is fully absent and needed for parity (blocks launch).
+- **P1** — partial parity; downstream consumers can work around it but
+  data quality suffers.
+- **P2** — polish / extended fields / admin concerns.
+- **Out of scope** — Phase 3/4 (Gauge analytics, Capital Distribution
+  reward indexing); intentionally deferred.
+
+For each gap: where it lives in legacy → where the fix lands → why.
 
 ---
 
-## Missing Items — Detail
+## P0 — fully missing features
 
-### 1. Implementation Address (RPC call at registration)
+### 1. ERC-721 transfer indexing
+- **Legacy:** `src/handlers/daoTransferHanlder.ts:41-120` —
+  `TransferProcessorFactory.create(ITransactionType.erc721, …)` for both
+  inbound and outbound NFT moves; writes `Transaction` + asset history.
+- **New indexer:** no ERC-721 subscription in `config.yaml`, no handler.
+- **Fix:** add `ERC721` wildcard to `config.yaml` mirroring the existing
+  `ERC20`; create `src/handlers/ERC721.ts`; extend `services/asset.ts`
+  to handle NFT (count, not amount) + extend `services/transaction.ts`
+  for ERC-721 transfer rows.
+- **Why:** NFT treasury is invisible — DAOs holding NFTs cannot be
+  audited or surfaced in the UI.
 
-Legacy fetches the EIP-1967 proxy implementation address via `getImplementationAddress()` at DAO registration time. Stored on the DAO document.
+### 2. SPP sub-plugin discovery & stage pairing
+- **Legacy:** `pairSppPlugins()` reads `StagesUpdated` on the SPP
+  plugin, parses the stage structure (voteDuration / thresholds /
+  plugins per stage), and links each sub-plugin back to its parent SPP
+  with `parentPlugin`, `stageIndex`, `isSubPlugin = true`. The SPP
+  itself gets `totalStages` + `subPlugins[]` populated.
+- **New indexer:** `Plugin.parentPluginAddress` + `Plugin.subPlugins`
+  exist in schema but are never populated. `StagesUpdated` is not in
+  `config.yaml`.
+- **Fix:** subscribe `StagesUpdated` on `StagedProposalProcessor`; add
+  `services/sppStages.ts` that persists the stage structure on the SPP
+  Plugin row, sets `parentPluginAddress` / `stageIndex` on each sub-
+  plugin, and populates `Plugin.subPlugins`. Cascade on uninstall (see
+  P0 #3) consumes the parent link.
+- **Why:** SPP queries (multi-stage governance flows) are
+  non-functional; the frontend cannot render staged proposals.
 
-- **Schema**: `implementationAddress` field exists but is always `undefined`
-- **Fix**: RPC call `storage_at(0x360894a13db93b02...)` during DAORegistered handler
-- **Effort**: Small — single RPC call via Effect
-
-### 2. DAO Version (RPC call at registration)
-
-Legacy calls `getDaoOsVersion()` to query the DAO's protocol version (e.g., "1.0.0", "1.3.0", "1.4.0").
-
-- **Schema**: `version` field exists but is always `undefined`
-- **Fix**: RPC call to DAO contract `protocolVersion()` or `daoURI()` during DAORegistered handler
-- **Effort**: Small — single RPC call via Effect
-
-### 3. ENS Resolution
-
-Legacy resolves ENS name for the DAO via `EnsHelper.getDaoEns(daoAddress, subdomain)`. Constructs the full `.dao.eth` name.
-
-- **Schema**: `ens` field exists but is always `undefined`
-- **Fix**: Construct ENS from subdomain pattern (`${subdomain}.dao.eth`) or resolve via RPC
-- **Effort**: Small — may not need RPC if ENS follows deterministic pattern
-
-### 4. Extra IPFS Metadata Fields
-
-Legacy parses additional fields from the IPFS metadata JSON that we currently ignore:
-
-| Field | Type | Purpose |
-|---|---|---|
-| `processKey` | string | SPP process key identifier |
-| `stageNames` | string[] | SPP stage names |
-| `blockedCountries` | string[] | OFAC compliance — blocked country codes |
-| `termsConditionsUrl` | string | Legal terms URL |
-| `enableOfacCheck` | boolean | Whether OFAC screening is enabled |
-
-- **Schema**: These fields don't exist on Dao entity
-- **Fix**: Add fields to schema.graphql, parse from IPFS JSON in MetadataSet handler
-- **Effort**: Small — schema + handler changes
-
-### 5. isActive / isHidden / isSupported Flags
-
-Legacy stores state flags on DAO:
-
-| Flag | Purpose |
-|---|---|
-| `isActive` | Whether DAO is active (default true) |
-| `isHidden` | Whether DAO is hidden from UI (admin flag) |
-| `isSupported` | Whether DAO uses supported plugin types |
-
-- **Schema**: These fields don't exist
-- **Fix**: Add to schema. `isActive` and `isHidden` are admin-managed (may not be indexer concern). `isSupported` is derived from plugin types during installation
-- **Effort**: Small for schema; `isSupported` logic exists in plugin detection
-
-### 6. DAO Linking (Parent/Child DAOs)
-
-Legacy implements bidirectional DAO linking via acknowledgement permissions:
-
-- `PARENT_TO_SUB_DAO_ACKNOWLEDGEMENT_PERMISSION_ID`
-- `SUB_DAO_TO_PARENT_ACKNOWLEDGEMENT_PERMISSION_ID`
-
-When both permissions are granted bidirectionally, DAOs are linked. Constraints:
-- Parent cannot become a child
-- A child cannot become a parent
-- A child can only have one parent
-
-Stores `parentAccount` and `linkedAccounts[]` on Dao document. Parent TVL includes child TVL.
-
-- **Schema**: `parentAccount` and `linkedAccounts` fields don't exist
-- **Fix**: Add fields + logic in Granted/Revoked handlers to check bidirectional permissions and link/unlink
-- **Effort**: Medium — needs bidirectional permission checking logic
-
-### 7. NativeTokenDeposited — Transaction Tracking
-
-Legacy creates a `Transaction` entity for every native deposit:
-- `type: native`, `side: deposit`
-- `sender`, `amount`, `daoAddress`
-- Triggers asset/metric recalculation
-
-Current Envio handler is empty (no entity created).
-
-- **Schema**: No Transaction entity exists
-- **Fix**: Add Transaction entity + populate in handler
-- **Effort**: Medium — new entity + handler logic
-
-### 8. Executed Event — DAO Upgrade Detection + Transaction Discovery
-
-Legacy does two things on Executed:
-
-**a) DAO Upgrade Detection**: Checks if any action in the execution calls `upgradeToAndCall()` targeting the DAO itself → updates DAO version.
-
-**b) Transaction Discovery**: Scans `actions[]` for native transfers (entries with `value > 0`) and creates `Transaction` entities for outgoing native transfers.
-
-Current Envio handler is empty.
-
-- **Fix**: Add version upgrade detection + native transfer extraction
-- **Effort**: Medium — parse actions array, detect upgrades via selector matching
-
-### 9. Treasury / Asset Tracking
-
-Legacy tracks full treasury state per DAO:
-
-- **Native balance**: Queries on-chain ETH/native balance
-- **ERC20 balances**: Queries all ERC20 token balances held by DAO
-- **USD values**: Converts balances to USD via price feeds (CoinGecko)
-- **TVL**: Sum of all asset USD values
-- **Asset entity**: Per-token balance record with amount + USD value
-
-This is the largest missing feature. It requires:
-- Periodic on-chain balance queries (or tracking Transfer events to/from DAO)
-- External price feed integration
-- Asset entity in schema
-
-- **Schema**: No Asset entity, no tvlUSD metric
-- **Fix**: Track Transfer events to/from DAO + price feed Effect
-- **Effort**: Large — new entity, Transfer event tracking, price feed integration
-
-### 10. Full Transaction History
-
-Legacy crawls blockchain logs to build complete transaction history:
-
-- Incoming ERC20 transfers (`Transfer(from, to, amount)` where `to = DAO`)
-- Outgoing ERC20 transfers (`Transfer(from, to, amount)` where `from = DAO`)
-- Incoming native deposits (`NativeTokenDeposited`)
-- Outgoing native transfers (extracted from `Executed` event actions)
-
-Each creates a `Transaction` entity with type, side, token details, amount.
-
-- **Schema**: No Transaction entity
-- **Fix**: Could track via wildcard ERC20 Transfer events filtered to DAO addresses, or via Executed actions
-- **Effort**: Large — wildcard Transfer tracking has performance implications
-
-### 11. Member Creation on DAO Registration
-
-Legacy creates a base `Member` entity for the DAO creator address at registration time, with ENS and avatar lookup.
-
-- **Schema**: No base Member entity (only PluginMember, TokenMember, etc.)
-- **Fix**: Add Member entity + create in DAORegistered handler
-- **Effort**: Small-Medium — new entity, optional ENS/avatar resolution
-
-### 12. Selector Permission Decoding
-
-Legacy decodes function selectors in SelectorAllowed events:
-- Parses function signature via contract ABI
-- Stores `functionName`, `contractName`, `inputs`, `notice`
-
-Current Envio handler stores raw selector bytes only.
-
-- **Schema**: SelectorPermission exists but lacks decoded fields
-- **Fix**: Add decoded fields + use action decoder pipeline or known ABI matching
-- **Effort**: Small — reuse existing knownAbis.ts or 4bytes lookup
+### 3. Sub-plugin abandonment cascade on uninstall
+- **Legacy:** when a parent plugin is uninstalled, sub-plugins it owned
+  are marked `status = abandoned`.
+- **New indexer:** `setPluginStatus` writes the parent only; orphans
+  remain `Installed`.
+- **Fix:** in `services/pluginInstall.ts:setPluginStatus`, when the
+  target status is `Uninstalled`, look up children via the
+  `parentPluginAddress` index (depends on P0 #2) and mark each as a new
+  `PluginStatus.Abandoned` value.
+- **Why:** orphaned sub-plugins keep emitting events that bind to a
+  dead parent; data integrity drifts.
 
 ---
 
-## Flow 2: Plugin Installation, Update & Uninstallation — Gap Analysis
+## P1 — partial parity
 
-| Feature | Legacy Backend | Envio Indexer | Status |
-|---|---|---|---|
-| **InstallationPrepared → Plugin preInstall** | Create Plugin with status=preInstall, detect type, extract permissions | Create Plugin with status=preInstall, detect type | **Partial** |
-| **InstallationApplied → Plugin installed** | Update status=installed, generate slug, create settings, queue async jobs | Update status=installed | **Partial** |
-| **Plugin type detection — repo lookup** | Bytecode-based detection only | Repo address lookup (226 repos) + bytecode fallback | Done (better) |
-| **Plugin type detection — bytecode fallback** | Checks function selectors in bytecode | Same approach | Done |
-| **Token discovery (tokenVoting/lockToVote)** | RPC: `getVotingToken()` on plugin contract | Token from `helpers[]` in PreparedSetupData | Done (different approach) |
-| **Token entity creation** | Full token: name, symbol, decimals, type, logo, totalSupply, holders, isGovernance | Basic: name, symbol, decimals | **Partial** |
-| **VE discovery** | RPC: escrow, curve, exitQueue, clock, nftLock, underlying (6 addresses) | RPC: escrow, exitQueue (2 addresses) | **Partial** |
-| **VE votingEscrow field on Plugin** | Object with escrow, curve, exitQueue, clock, nftLock, underlying | JSON with escrow, exitQueue only | **Partial** |
-| **Plugin permissions extraction** | Parsed from PreparedSetupData, stored on Plugin | Not extracted from event | **Missing** |
-| **proposalCreationConditionAddress** | Extracted from PROPOSAL_CREATION_PERMISSION in permissions | Not extracted | **Missing** |
-| **Plugin flags: isProcess/isBody/isSubPlugin/isPolicy** | Set based on plugin type and SPP context | Not tracked | **Missing** |
-| **Plugin slug generation** | `PluginSlug.generateSlug()` — human-readable URL slug | Not implemented | **Missing** |
-| **Plugin metadata (name/desc/links)** | Fetched from IPFS if MetadataSet fires on SPP | Not stored on Plugin (SPP subdomain only) | **Partial** |
-| **Plugin implementation address** | Fetched via proxy helper | Not fetched | **Missing** |
-| **SPP sub-plugin discovery** | `pairSppPlugins()` — links sub-plugins to stages, sets parentPlugin/stageIndex/isSubPlugin | Not implemented | **Missing** |
-| **SPP totalStages** | Stored on Plugin from StagesUpdated event | Not tracked | **Missing** |
-| **SPP stages in Settings** | Full stage structure: minAdvance, maxAdvance, voteDuration, thresholds, plugins per stage | Not stored (stages field exists but not populated from StagesUpdated) | **Missing** |
-| **UpdatePrepared** | Creates LogPluginSetupProcessor | Creates PluginSetupLog | Done |
-| **UpdateApplied** | Creates NEW Plugin (installed), marks old as deprecated, inherits config | Updates existing Plugin.status=updated | **Different** |
-| **Update — version inheritance** | New plugin inherits tokenAddress, votingEscrow, lockManager, flags from old | No inheritance (same plugin entity updated) | **Different** |
-| **Update — DAO version upgrade** | Checks for `upgradeToAndCall` in execution, updates DAO version | Not checked | **Missing** |
-| **UninstallationPrepared** | Creates LogPluginSetupProcessor | Creates PluginSetupLog | Done |
-| **UninstallationApplied** | status=uninstalled, delete slug, abandon orphaned sub-plugins | status=uninstalled only | **Partial** |
-| **Uninstall via permission revoke** | Fallback: EXECUTE_PERMISSION revoke triggers uninstall | Not implemented | **Missing** |
-| **Sub-plugin abandonment on uninstall** | Orphaned sub-plugins marked status=abandoned | Not implemented | **Missing** |
-| **Settings status on uninstall** | Settings marked inactive with inactiveAtBlockNumber | Not tracked | **Missing** |
-| **Plugin reinstallation** | EXECUTE_PERMISSION grant on uninstalled plugin → status=installed | Not implemented | **Missing** |
-| **Gauge settings** | enabledUpdatedVotingPowerHook, VE escrow settings | Not tracked | **Missing** |
-| **LockToVote settings** | approvalThreshold (additional field) | Not stored | **Missing** |
-| **VE escrow settings** | minDeposit, minLockTime, cooldown, maxTime, slope, bias, feePercent, etc. | Not tracked | **Missing** |
-| **Policy/Router settings** | policyId, strategyType, source, model, swap, subRouters/subClaimers | policy field exists but not populated | **Missing** |
-| **PluginMetrics (per member)** | proposalsCreated, votes, firstActivity, lastActivity per member per plugin | PluginActivityMetric exists but simpler | **Partial** |
-| **Member creation on install** | Creates base Member + PluginMember for admin plugin on EXECUTE_PROPOSAL_PERMISSION | Not done at install time | **Missing** |
-| **Async post-install processing** | Queue job to `plugins` queue for further processing | Not applicable (Envio is synchronous) | N/A |
+### 4. Selector-permission function-name decoding
+- **Legacy:** `executeHandler.ts` calls `ContractInfo.parseSignature()`
+  to resolve the 4-byte selector to function name + inputs + NatSpec
+  notice; stored on `SelectorPermission`.
+- **New indexer:** `handlers/ExecuteSelectorCondition.ts` writes only
+  the raw `selector: bytes4`. No decoding.
+- **Fix:** new `effects/decodeSelector.ts` (mirror the
+  `decodeProposalActions` pipeline: known ABIs → 4byte → unknown);
+  extend `SelectorPermission` schema with `functionName`, `functionSig`,
+  `inputs?`; call from the handler's `SelectorAllowed` path.
+- **Why:** selector-permission audits are unreadable without the
+  function name; debugging requires manual ABI lookup per selector.
 
-### Missing Items — Detail
+### 5. SPP proposal tree + stage execution history
+- **Legacy:** `Proposal` model has `subProposals`, `stageExecutions`,
+  `results`, `parentProposal`, `isSubProposal`, `totalStages`,
+  `stageIndex`, `lastStageTransition` (`models/schema/proposal.ts:341-356`).
+- **New indexer:** `Proposal` schema has none of these.
+- **Fix:** add the fields to `schema.graphql`; extend
+  `services/proposal.ts:createProposal` (and a new updater for stage
+  transitions) to populate them. `StagedProposalProcessor.ProposalAdvanced`
+  / `ProposalResultReported` handlers (currently placeholders) write the
+  stage execution rows.
+- **Why:** SPP multi-stage governance UX cannot show progress, sub-
+  bodies, or per-stage results.
 
-#### 13. Plugin Permissions Extraction
+### 6. Proposal edit / cancel audit trail
+- **Legacy:** `Proposal.editedTxInfo`, `cancelTxInfo` capture the txhash
+  + block + actor of every edit / cancellation. `incrementalId` mirrors
+  the contract's per-plugin proposal counter.
+- **New indexer:** `editProposal` / `cancelProposal` overwrite without
+  recording history; no `incrementalId`.
+- **Fix:** schema additions on `Proposal`, populated by
+  `services/proposal.ts:editProposal` / `cancelProposal`. Could mirror
+  the `DaoMetadataLog` / `PluginMetadataLog` pattern with a separate
+  `ProposalChangeLog` if richer history is needed.
+- **Why:** governance forensics — "who changed this proposal and
+  when" — currently impossible.
 
-Legacy parses permissions from `preparedSetupData.permissions` array and stores them on the Plugin entity. Each permission has: `operation` (Grant/Revoke), `where`, `who`, `condition`, `permissionId`.
+### 7. Per-proposal voting-settings snapshot
+- **Legacy:** snapshots the plugin's full voting-config (support
+  threshold, min participation, durations) onto each `Proposal` at
+  creation, so historical proposals stay valid even if the plugin's
+  current settings change.
+- **New indexer:** `Proposal.snapshot: Json` only carries the token /
+  member-count snapshot.
+- **Fix:** in `services/proposal.ts:createProposal`, look up the
+  current `PluginSetting` for the plugin and embed it into the
+  `snapshot` blob. No schema change.
+- **Why:** quorum / approval calculations against historical proposals
+  silently break when plugin settings are updated mid-flight.
 
-Also extracts `proposalCreationConditionAddress` from the `PROPOSAL_CREATION_PERMISSION` in the permissions array — used to track who can create proposals.
+### 8. Plugin lifecycle via permission events (re-install / uninstall fallback)
+- **Legacy:** treats `EXECUTE_PERMISSION` grant on an `Uninstalled`
+  plugin as a re-install signal (`status` flips back to `Installed`).
+  Symmetric: an `EXECUTE_PERMISSION` revoke without a paired
+  `UninstallationApplied` in the same tx triggers an uninstall.
+- **New indexer:** neither path exists — plugin status only changes via
+  PSP events.
+- **Fix:** add re-install + uninstall-fallback branches to
+  `handlers/Permission.ts` (Granted / Revoked) that route through
+  `setPluginStatus`.
+- **Why:** plugins that bypass the standard PSP lifecycle (some legacy
+  governance setups) drift out of sync with on-chain reality.
 
-- **Schema**: `permissions` field exists as Json but is always `undefined`
-- **Fix**: Parse permissions from `event.params.preparedSetupData[1]` in InstallationPrepared handler
-- **Effort**: Small — data is in the event, just needs parsing
+### 9. `PluginSetting` inactivation on uninstall
+- **Legacy:** when a plugin is uninstalled, its `PluginSetting` rows
+  flip to inactive with an `inactiveAtBlockNumber` stamp.
+- **New indexer:** `setPluginStatus` flips only the `Plugin` row;
+  settings remain "active".
+- **Fix:** `services/pluginInstall.ts:setPluginStatus` extension —
+  iterate `PluginSetting` rows for the plugin and patch.
+- **Why:** consumers filtering on "active settings" see ghost configs
+  for dead plugins.
 
-#### 14. Plugin Flags (isProcess/isBody/isSubPlugin/isPolicy)
+### 10. `proposalCreationConditionAddress`
+- **Legacy:** extracts the condition contract attached to
+  `PROPOSAL_CREATION_PERMISSION` from the prepared-setup permissions
+  array; surfaces as `Plugin.proposalCreationConditionAddress`.
+- **New indexer:** the field exists in the schema (`conditionAddress`
+  is the closest match) but is never populated from PSP events.
+- **Fix:** in `services/pluginInstall.ts:stubPluginOnInstallPrepared`,
+  walk the parsed permissions array, find the entry where `permissionId
+  == keccak256("CREATE_PROPOSAL_PERMISSION")`, and set
+  `Plugin.conditionAddress` to its `condition` field.
+- **Why:** consumers cannot tell which addresses are gated for proposal
+  creation without re-walking the permissions blob.
 
-Legacy tracks these flags to categorize plugins within the SPP architecture:
-- `isProcess`: Plugin manages proposal flow (SPP, governance plugins)
-- `isBody`: Plugin provides voting/approval (TokenVoting, Multisig, LockToVote)
-- `isSubPlugin`: Plugin is a stage body in an SPP
-- `isPolicy`: Plugin is a Router/Claimer policy
-
-- **Schema**: These fields don't exist on Plugin
-- **Fix**: Add fields + set based on interfaceType and SPP context
-- **Effort**: Small for basic flags, Medium if SPP pairing is needed
-
-#### 15. SPP Sub-Plugin Discovery & Stage Pairing
-
-Legacy's `pairSppPlugins()` method:
-1. Reads `StagesUpdated` event on SPP plugin
-2. Parses full stage structure (voteDuration, thresholds, plugins per stage)
-3. Links sub-plugin addresses to their parent SPP
-4. Sets `parentPlugin`, `stageIndex`, `isSubPlugin=true` on each sub-plugin
-5. Sets `totalStages` and `subPlugins[]` on the SPP plugin
-
-- **Schema**: `subPlugins` field exists as Json but isn't populated. No `parentPlugin`/`stageIndex` fields
-- **Fix**: Add StagesUpdated event to SPP contract config, implement pairing logic
-- **Effort**: Medium-Large — needs new event in config.yaml + complex pairing logic
-
-#### 16. Full VE Discovery (6 addresses)
-
-Legacy discovers 6 VE contract addresses, Envio discovers only 2:
-
-| Address | Legacy | Envio |
-|---|---|---|
-| `escrowAddress` | Yes | Yes |
-| `exitQueueAddress` | Yes | Yes |
-| `curveAddress` | Yes | **Missing** |
-| `clockAddress` | Yes | **Missing** |
-| `nftLockAddress` | Yes (also saved as Token) | **Missing** |
-| `underlying` (ERC20) | Yes | **Missing** |
-
-- **Fix**: Add RPC calls for curve(), lockNFT(), token() on escrow contract during VE discovery
-- **Effort**: Small — additional RPC calls in existing discovery flow
-
-#### 17. Update Flow — Deprecation Model
-
-Legacy creates a **new** Plugin entity on update and marks the old one as `deprecated`. The new plugin inherits key config from the old one (tokenAddress, votingEscrow, lockManager, flags).
-
-Envio currently updates the existing Plugin entity in-place (status=updated).
-
-- **Impact**: Different data model — legacy keeps full version history, Envio overwrites
-- **Fix**: Either adopt legacy model (new entity per version) or accept the simpler approach
-- **Effort**: Medium if adopting legacy model, None if current approach is acceptable
-
-#### 18. Uninstall via Permission Revoke
-
-Legacy has a fallback uninstall mechanism: when `EXECUTE_PERMISSION` is revoked on a plugin, it checks if the plugin should be uninstalled (no UninstallationApplied in same tx).
-
-- **Fix**: Add logic in DAO.Revoked handler to check for plugin uninstall condition
-- **Effort**: Medium — needs cross-entity query and tx receipt checking
-
-#### 19. Plugin Reinstallation
-
-Legacy supports re-installing a previously uninstalled plugin: when `EXECUTE_PERMISSION` is granted on an uninstalled plugin, it reactivates it.
-
-- **Fix**: Add logic in DAO.Granted handler to check for plugin reinstall condition
-- **Effort**: Small — check if plugin exists with status=uninstalled, update to installed
-
-#### 20. VE Escrow Settings (on PluginSetting)
-
-Legacy stores detailed VE escrow configuration on the Setting entity:
-- `minDeposit`, `minLockTime`, `cooldown`, `maxTime` — lock parameters
-- `slope`, `bias` — voting power curve parameters
-- `feePercent`, `minFeePercent`, `minCooldown`, `feeType` — exit fee parameters
-
-- **Schema**: Not on PluginSetting
-- **Fix**: Add fields + fetch from escrow/exitQueue contracts during settings creation
-- **Effort**: Medium — multiple RPC calls for escrow parameters
+### 11. Cross-plugin metric refresh on token delegation — **decided: query-time aggregation**
+- **Legacy:** on `DelegateVotesChanged` / `TokensDelegated`, recomputes
+  per-plugin metrics for every plugin whose `tokenAddress` matches the
+  delegated token (`governanceErc20Handler.ts:55`,
+  `governanceVeHandler.ts:43-52`).
+- **New indexer:** `GovernanceERC20.ts` and `VotingEscrow.ts` write the
+  `TokenDelegation` / `TokenMember` rows. **No fan-out at handler time.**
+- **Decision:** consumers aggregate at GraphQL query time. HyperIndex is
+  column-oriented; fan-out at handler time would multiply writes by N
+  (number of plugins per token) on every delegation event for very
+  little ergonomic gain — clients can join `TokenMember.tokenAddress`
+  → `Plugin.tokenAddress` to derive per-plugin voting-power summaries
+  directly.
+- **No code change required.** This item is closed by design choice.
 
 ---
 
-## Priority Tiers
+## P2 — extended metadata + admin
 
-### P0 — Required for feature parity (basic DAO view)
-- [ ] Implementation address (RPC call)
-- [ ] DAO version (RPC call)
-- [ ] ENS resolution
-- [ ] Extra IPFS metadata fields
-- [ ] NativeTokenDeposited → Transaction entity
-- [ ] Executed → DAO upgrade detection
+### 12. Extended IPFS metadata fields on Dao
+- **Legacy:** parses these from the DAO metadata IPFS payload:
+  `processKey`, `stageNames`, `blockedCountries`, `enableOfacCheck`,
+  `termsConditionsUrl`, plus the original `metadataIpfs` hash kept
+  alongside the URI.
+- **New indexer:** `parseDaoMetadata` in `utils/metadata.ts` only
+  extracts `name / description / avatar / links`.
+- **Fix:** extend `parseDaoMetadata` + add the corresponding fields to
+  the `Dao` GraphQL type + write-through in `services/dao.ts`.
+- **Why:** OFAC / terms / process-key are required for compliant
+  product views.
 
-### P0.5 — Required for feature parity (plugin view)
-- [ ] Plugin permissions extraction from PreparedSetupData
-- [ ] proposalCreationConditionAddress extraction
-- [ ] Plugin implementation address (RPC call)
-- [ ] Full VE discovery (curve, clock, nftLock, underlying — 4 additional addresses)
-- [ ] Token entity: type, isGovernance, logo, totalSupply fields
+### 13. `Dao.isActive` / `Dao.isHidden`
+- **Legacy:** soft-delete + admin-hide flags, used in 5 compound
+  indexes (`models/schema/dao.ts:68-72`).
+- **New indexer:** absent.
+- **Fix:** add nullable boolean columns to `Dao`. Population is
+  admin-side, not indexer-driven; the schema needs the slots so the
+  application layer can write them.
+- **Why:** without the flags the application layer can't soft-delete
+  spam DAOs or hide test deployments.
 
-### P1 — Required for full governance view
-- [ ] DAO linking (parent/child)
-- [ ] Member creation on registration
-- [ ] isSupported flag (derived from plugin type)
-- [ ] Selector permission decoding
-- [ ] Plugin flags (isProcess/isBody/isSubPlugin/isPolicy)
-- [ ] SPP sub-plugin discovery & stage pairing
-- [ ] SPP totalStages
-- [ ] Plugin reinstallation via permission grant
-- [ ] Uninstall via permission revoke (fallback)
-- [ ] Sub-plugin abandonment on uninstall
-- [ ] Settings inactivation on uninstall
+### 14. `Dao.tvlUSD` — **schema-only; aggregation belongs to enrichment service**
+- **Legacy:** maintains TVL via periodic Mongo aggregation —
+  `daoMetrics.update()` joins `Asset × Token.priceUsd` and sums.
+  Prices are populated by a separate price-update job, not on transfer.
+- **New indexer:** added `Token.priceUsd: BigInt` + `priceUpdatedAt: Int`
+  schema slots. The indexer **never writes them** — the external
+  enrichment service (CoinGecko / Alchemy Prices, env wiring already in
+  `config/index.ts`) owns price updates.
+- **TVL itself is computed at GraphQL query time**: consumers select
+  `Dao { assets { amount, token { priceUsd } } }` and sum
+  `amount × priceUsd` client-side. No materialised `Dao.tvlUSD` field
+  needed; matches the column-oriented HyperIndex model.
+- **What still needs building (out of scope for indexer):** the price
+  enrichment service. See the `enrichment-service` skill.
 
-### P2 — Required for treasury/financial view
-- [ ] Treasury / Asset tracking (native + ERC20 balances)
-- [ ] Full transaction history
-- [ ] TVL metric (requires price feeds)
+### 15. DAO parent/child linking — **not in legacy main, closed**
+- Earlier gap docs cited `PARENT_TO_SUB_DAO_ACKNOWLEDGEMENT_PERMISSION_ID`
+  / `SUB_DAO_TO_PARENT_ACKNOWLEDGEMENT_PERMISSION_ID` constants in
+  legacy. Verified against `app-backend/main` (commit `ef5c65d8`,
+  v0.23.1) — neither constant nor any linkedAccount / parentAccount
+  field exists. The feature was apparently never merged.
+- **No code change required.** If sub-DAO hierarchies become a real
+  product requirement, design them as a `DaoLink` entity at that point
+  (mirrors the `PluginParentLink` pattern from P0 #2).
 
-### P3 — Nice to have / Architecture decisions
-- [ ] isActive / isHidden flags (may be API-layer concern)
-- [ ] Update flow: deprecation model vs in-place update (architecture decision)
-- [ ] Plugin slug generation
-- [ ] VE escrow settings (minDeposit, cooldown, fee params)
-- [ ] Policy/Router settings population
-- [ ] Gauge settings (enabledUpdatedVotingPowerHook)
-- [ ] LockToVote approvalThreshold setting
+### 16. Plugin slug generation
+- **Legacy:** `PluginSlug.generateSlug()` produces stable, human-
+  readable URL slugs per `(daoAddress, pluginAddress)` pair.
+- **New indexer:** absent.
+- **Fix:** small utility in `utils/plugin.ts`; add `Plugin.slug` to
+  schema; populate in `services/pluginInstall.ts`.
+- **Why:** clean URLs are an application concern but the indexer is the
+  natural place to compute them once.
 
-### P0 — Required for feature parity (basic DAO view)
-- [ ] Implementation address (RPC call)
-- [ ] DAO version (RPC call)
-- [ ] ENS resolution
-- [ ] Extra IPFS metadata fields
-- [ ] NativeTokenDeposited → Transaction entity
-- [ ] Executed → DAO upgrade detection
+### 17. Plugin lifecycle flags (`isProcess` / `isBody` / `isPolicy`)
+- **Legacy:** classifies plugins into the SPP architecture roles
+  (process, body, sub-plugin, policy).
+- **New indexer:** only `interfaceType` exists. The roles are
+  derivable but not stored.
+- **Fix:** schema additions + derivation in
+  `services/pluginInstall.ts:stubPluginOnInstallPrepared` based on
+  `interfaceType` + presence of `parentPluginAddress`.
+- **Why:** UI needs role classification to render plugin cards
+  consistently.
 
-### P1 — Required for full governance view
-- [ ] DAO linking (parent/child)
-- [ ] Member creation on registration
-- [ ] isSupported flag (derived from plugin type)
-- [ ] Selector permission decoding
+### 18. VE escrow settings on `PluginSetting`
+- **Legacy:** stores `minDeposit`, `minLockTime`, `cooldown`, `maxTime`,
+  `slope`, `bias`, `feePercent`, `minFeePercent`, `feeType`, `minCooldown`
+  on the LockToVote settings entry.
+- **New indexer:** the LockToVote settings handler stores the basic
+  fields; the VE-specific extras are not fetched.
+- **Fix:** in `handlers/LockToVote.ts:LockToVoteSettingsUpdated`, after
+  computing the base settings, call a new
+  `effects/escrowSettings.ts` to read the parameters via RPC and add
+  them to `PluginSetting`.
+- **Why:** LockToVote frontends need the lock parameters to render
+  the lock UI correctly.
 
-### P2 — Required for treasury/financial view
-- [ ] Treasury / Asset tracking (native + ERC20 balances)
-- [ ] Full transaction history
-- [ ] TVL metric (requires price feeds)
+### 19. LockToVote `approvalThreshold` field on `PluginSetting`
+- **Legacy:** persists this LockToVote-specific extra setting.
+- **New indexer:** missing from schema.
+- **Fix:** add column + populate from the existing settings event.
+- **Why:** LockToVote approval ratios cannot be displayed.
 
-### P3 — Admin / operational
-- [ ] isActive / isHidden flags (may be API-layer concern, not indexer)
+### 20. Policy / Router plugin settings — **not in legacy main, closed**
+- Earlier gap docs cited Router/Claimer policy handlers in legacy.
+  Verified against `app-backend/main` (commit `ef5c65d8`, v0.23.1) —
+  no `policyHandler.ts`, no `PolicySet` / `VaultSet` /
+  `SourceSettingsUpdated` event subscriptions, no `policyId` /
+  `strategyType` / `subRouters` field implementations exist. The only
+  hits for "router" in legacy `src/` are tRPC HTTP-API routers,
+  unrelated to on-chain Router plugins.
+- **No code change required.** When Router/Claimer plugins ship, design
+  the settings shape at that point.
+
+### 21. Plugin update model — **decided: in-place + PluginSetupLog audit trail**
+- **Legacy:** UpdateApplied creates a NEW `Plugin` doc at the new
+  (release, build), marks previous `Deprecated`, inherits tokenAddress
+  etc. Two rows share the same address but differ on build.
+- **New indexer:** in-place update — `Plugin.id = (chainId, address)`,
+  status flips to `Updated` on UpdateApplied. Build / release fields
+  on the live row reflect the latest version.
+- **Decision rationale:** every other entity (`Proposal`, `Vote`,
+  `PluginMember`, `PluginSetting`, `PluginParentLink`, ...) references
+  `Plugin` via `plugin_id`. Legacy's "new row per version" model
+  requires those references to know about versions too. In-place keeps
+  references stable; full version history is preserved in
+  `PluginSetupLog` (one row per Prepared/Applied event with
+  release/build/permissions). Consumers reconstruct "which version
+  applied at block N" by walking `PluginSetupLog` entries for that
+  plugin in block order.
+- **No code change required.** PluginSetupLog already records the
+  versioning history we'd otherwise duplicate on the Plugin row.
+
+---
+
+### 22. Multi-chain action-decoder explorer router — **schema ready, code pending**
+- **Legacy:** `helpers/evmExplorerClient.ts` routes `fetchContractSourceCode`
+  per chain — Etherscan v2 for most, Routescan for Avalanche, zkSync's
+  own block-explorer API for zkSync, Blockscout for Citrea, Subscan for
+  Peaq. The proposal-action decoder calls into this per-chain router.
+- **New indexer:** `helpers/actionDecoder.ts` calls Etherscan v2 only.
+  Until a multi-chain router lands, action decoding on Avalanche / zkSync
+  / Citrea / Peaq falls straight to the 4byte signature lookup (worse
+  decoding — function name only, no parameter shapes / NatSpec).
+- **Why it doesn't bite today:** only Ethereum mainnet is enabled in
+  `config.yaml`. As soon as any other chain is uncommented, the
+  degradation kicks in.
+- **Fix:** new `helpers/explorerRouter.ts` mirroring legacy's
+  `EvmExplorerClient.configs[]` map (Etherscan / Routescan / zkSync /
+  Blockscout / Subscan), routed by chainId. `actionDecoder.ts:fetchEtherscanSource`
+  becomes `fetchExplorerSource(address, chainId)` and dispatches via the
+  router. The env vars for all five backends are already wired in
+  `config/index.ts` and documented in `.env.example` — only the router
+  itself needs writing.
+- **Severity:** P1 once second chain is enabled; P3 today.
+
+## Out of scope (Phase 3 / 4)
+
+These were on prior gap docs but are deferred until Phase 3/4 ships:
+- Capital Distribution: `CampaignReward`, `CampaignMerkleRoot`,
+  per-campaign reward aggregation, allocation-strategy crawling.
+- Gauge analytics: `GaugeMetrics` per-epoch aggregation, gauge epoch
+  cycle entity.
+- Async post-install enrichment queues (HyperIndex is synchronous; no
+  equivalent needed).

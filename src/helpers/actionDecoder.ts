@@ -3,16 +3,22 @@
  *
  * Pipeline:
  *   1. Known ABIs (instant, no external calls)
- *   2. Proxy detection via EIP-1967 (1 RPC call)
- *   3. Etherscan source + ABI + NatSpec (1 API call)
- *   4. 4bytes directory fallback (1 API call)
+ *   2. EIP-1967 proxy detection (1 RPC call)
+ *   3. Explorer source + ABI + NatSpec — picks Etherscan / Routescan /
+ *      ZkSync / Blockscout / Subscan per chainId via
+ *      `helpers/explorers/routing.ts`. Each provider has its own
+ *      Bottleneck queue (`helpers/rateLimiter.ts`).
+ *   4. 4byte directory fallback (1 API call, throttled separately)
  *   5. Unknown fallback
  */
 
 import { type Abi, decodeFunctionData, getAddress, type Hex, parseAbi } from "viem";
-import { etherscanConfig, fourByteConfig, getClient } from "../config";
+import { EIP1967_IMPL_SLOT } from "../constants";
+import { fetchContractSourceCode, type SourceCodeResult } from "./explorers";
+import { fetchFourByteSignature } from "./fourByte";
 import { classifyAction, KNOWN_ABIS } from "./knownAbis";
 import { type ParsedNatSpec, parseNatSpec } from "./natspecParser";
+import { getClient } from "./rpcProvider";
 
 // --- Types ---
 
@@ -42,9 +48,26 @@ export interface DecodedAction {
   parameters: DecodedParameter[];
 }
 
-// --- In-memory caches for external lookups ---
+interface AbiInput {
+  name?: string;
+  type: string;
+}
 
-const etherscanCache = new Map<string, { abi: any[] | null; source: string | null; contractName: string | null }>();
+interface AbiItem {
+  type: string;
+  name?: string;
+  inputs?: readonly AbiInput[];
+}
+
+// --- In-memory caches for external lookups ---
+//
+// `sourceCache` and `fourByteCache` short-circuit repeat lookups within a
+// single batch — the per-provider Bottleneck queue throttles cold misses,
+// the Effect cache (decodeActions / decodeSelector) persists across runs.
+// The proxy cache covers EIP-1967 storage reads, which are RPC-bound and
+// not part of the explorer/4byte queue.
+
+const sourceCache = new Map<string, SourceCodeResult>();
 const fourByteCache = new Map<string, string | null>();
 const proxyCache = new Map<string, string | null>();
 
@@ -58,7 +81,7 @@ export async function decodeActions(
   return Promise.all(actions.map((action) => decodeSingleAction(action, chainId, daoAddress)));
 }
 
-async function decodeSingleAction(action: RawAction, chainId: number, daoAddress: string): Promise<DecodedAction> {
+async function decodeSingleAction(action: RawAction, chainId: number, _daoAddress: string): Promise<DecodedAction> {
   const { to, value, data } = action;
 
   // Native transfer (no calldata or just 0x)
@@ -84,9 +107,9 @@ async function decodeSingleAction(action: RawAction, chainId: number, daoAddress
   // Stage 2: Proxy detection
   const implAddress = await detectProxy(to, chainId);
 
-  // Stage 3: Etherscan ABI + NatSpec
-  const etherscanResult = await tryEtherscan(action, chainId, implAddress);
-  if (etherscanResult) return etherscanResult;
+  // Stage 3: Explorer ABI + NatSpec (per-chain provider routing)
+  const explorerResult = await tryExplorer(action, chainId, implAddress);
+  if (explorerResult) return explorerResult;
 
   // Stage 4: 4bytes fallback
   const fourByteResult = await tryFourBytes(action);
@@ -116,13 +139,14 @@ function tryKnownAbis(action: RawAction): DecodedAction | null {
     try {
       const { functionName, args } = decodeFunctionData({ abi, data: data as Hex });
 
-      // Build text signature from ABI
-      const abiItem = (abi as any[]).find((item: any) => item.type === "function" && item.name === functionName);
+      const abiItem = (abi as readonly AbiItem[]).find(
+        (item) => item.type === "function" && item.name === functionName,
+      );
       const textSignature = abiItem
-        ? `${functionName}(${(abiItem.inputs || []).map((i: any) => i.type).join(",")})`
+        ? `${functionName}(${(abiItem.inputs ?? []).map((i) => i.type).join(",")})`
         : functionName;
 
-      const parameters = formatParameters(abiItem?.inputs || [], args || []);
+      const parameters = formatParameters(abiItem?.inputs ?? [], args ?? []);
 
       return {
         to,
@@ -146,8 +170,6 @@ function tryKnownAbis(action: RawAction): DecodedAction | null {
 
 // --- Stage 2: Proxy Detection ---
 
-const EIP1967_IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2a6d3fe4c5d95e6c1fef0a2b9c85" as Hex;
-
 async function detectProxy(address: string, chainId: number): Promise<string | null> {
   const cacheKey = `${chainId}-${address}`;
   if (proxyCache.has(cacheKey)) return proxyCache.get(cacheKey)!;
@@ -156,7 +178,7 @@ async function detectProxy(address: string, chainId: number): Promise<string | n
     const client = getClient(chainId);
     const storageValue = await client.getStorageAt({
       address: address as `0x${string}`,
-      slot: EIP1967_IMPL_SLOT,
+      slot: EIP1967_IMPL_SLOT as Hex,
     });
 
     if (!storageValue || storageValue === "0x" || BigInt(storageValue) === 0n) {
@@ -165,7 +187,7 @@ async function detectProxy(address: string, chainId: number): Promise<string | n
     }
 
     // Extract address from storage (last 20 bytes of 32-byte slot)
-    const implAddress = getAddress("0x" + storageValue.slice(-40));
+    const implAddress = getAddress(`0x${storageValue.slice(-40)}`);
     proxyCache.set(cacheKey, implAddress);
     return implAddress;
   } catch {
@@ -174,99 +196,53 @@ async function detectProxy(address: string, chainId: number): Promise<string | n
   }
 }
 
-// --- Stage 3: Etherscan ---
+// --- Stage 3: Explorer source-code lookup (Etherscan / Routescan / ZkSync /
+// Blockscout / Subscan — picked per chain by `helpers/explorers/routing.ts`) ---
 
-interface EtherscanSourceResult {
-  abi: any[] | null;
-  source: string | null;
-  contractName: string | null;
-}
-
-async function fetchEtherscanSource(address: string, chainId: number): Promise<EtherscanSourceResult> {
+async function fetchSourceWithCache(address: string, chainId: number): Promise<SourceCodeResult> {
   const cacheKey = `${chainId}-${address}`;
-  if (etherscanCache.has(cacheKey)) return etherscanCache.get(cacheKey)!;
-
-  const empty: EtherscanSourceResult = { abi: null, source: null, contractName: null };
-
-  if (!etherscanConfig.apiKey) {
-    etherscanCache.set(cacheKey, empty);
-    return empty;
-  }
-
-  try {
-    const url = `${etherscanConfig.baseUrl}?module=contract&action=getsourcecode&address=${address}&chainid=${chainId}&apikey=${etherscanConfig.apiKey}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      etherscanCache.set(cacheKey, empty);
-      return empty;
-    }
-
-    const json: any = await response.json();
-    const result = json?.result?.[0];
-
-    if (!result || result.ABI === "Contract source code not verified") {
-      etherscanCache.set(cacheKey, empty);
-      return empty;
-    }
-
-    let abi: any[] | null = null;
-    try {
-      abi = JSON.parse(result.ABI);
-    } catch {}
-
-    const output: EtherscanSourceResult = {
-      abi,
-      source: result.SourceCode || null,
-      contractName: result.ContractName || null,
-    };
-
-    etherscanCache.set(cacheKey, output);
-    return output;
-  } catch {
-    etherscanCache.set(cacheKey, empty);
-    return empty;
-  }
+  const cached = sourceCache.get(cacheKey);
+  if (cached) return cached;
+  const result = await fetchContractSourceCode(chainId, address);
+  sourceCache.set(cacheKey, result);
+  return result;
 }
 
-async function tryEtherscan(
+async function tryExplorer(
   action: RawAction,
   chainId: number,
   implAddress: string | null,
 ): Promise<DecodedAction | null> {
   const { to, value, data } = action;
 
-  // Try implementation address first (for proxies), then target address
+  // Try implementation address first (for proxies), then target address.
   const addresses = implAddress ? [implAddress, to] : [to];
 
   for (const addr of addresses) {
-    const etherscan = await fetchEtherscanSource(addr, chainId);
-    if (!etherscan.abi) continue;
+    const sourceResult = await fetchSourceWithCache(addr, chainId);
+    if (!sourceResult.abi) continue;
 
     try {
       const { functionName, args } = decodeFunctionData({
-        abi: etherscan.abi as Abi,
+        abi: sourceResult.abi as Abi,
         data: data as Hex,
       });
 
-      // Find matching ABI item for parameter names
-      const abiItem = etherscan.abi.find((item: any) => item.type === "function" && item.name === functionName);
+      const abiItem = sourceResult.abi.find((item) => item.type === "function" && item.name === functionName);
 
       const textSignature = abiItem
-        ? `${functionName}(${(abiItem.inputs || []).map((i: any) => i.type).join(",")})`
+        ? `${functionName}(${(abiItem.inputs ?? []).map((i) => i.type).join(",")})`
         : functionName;
 
-      // Parse NatSpec from source
+      // NatSpec lives inside `source` when the explorer returns it; for
+      // ABI-only providers (no source) we skip parsing.
       let natspec: ParsedNatSpec | null = null;
-      if (etherscan.source) {
-        natspec = parseNatSpec(etherscan.source, etherscan.contractName || undefined);
+      if (sourceResult.source) {
+        natspec = parseNatSpec(sourceResult.source, sourceResult.contractName || undefined);
       }
 
       const funcNatSpec = natspec?.functions[functionName];
-      const parameters = formatParametersWithNatSpec(abiItem?.inputs || [], args || [], funcNatSpec?.params || {});
+      const parameters = formatParametersWithNatSpec(abiItem?.inputs ?? [], args ?? [], funcNatSpec?.params || {});
 
       return {
         to,
@@ -274,14 +250,14 @@ async function tryEtherscan(
         data,
         type: classifyAction(functionName),
         functionName,
-        contractName: etherscan.contractName,
+        contractName: sourceResult.contractName,
         textSignature,
         notice: funcNatSpec?.notice || null,
         implementationAddress: implAddress,
         parameters,
       };
     } catch {
-      // ABI doesn't match this function
+      // ABI doesn't match this function — keep walking the address list.
     }
   }
 
@@ -290,47 +266,29 @@ async function tryEtherscan(
 
 // --- Stage 4: 4bytes Directory ---
 
-async function fetch4ByteSignature(selector: string): Promise<string | null> {
-  if (fourByteCache.has(selector)) return fourByteCache.get(selector)!;
-
-  try {
-    const url = `${fourByteConfig.uri}/signatures/?format=json&hex_signature=${selector}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      fourByteCache.set(selector, null);
-      return null;
-    }
-
-    const json: any = await response.json();
-    const sig = json?.results?.[0]?.text_signature || null;
-    fourByteCache.set(selector, sig);
-    return sig;
-  } catch {
-    fourByteCache.set(selector, null);
-    return null;
-  }
-}
-
 async function tryFourBytes(action: RawAction): Promise<DecodedAction | null> {
   const { to, value, data } = action;
   const selector = data.slice(0, 10);
 
-  const textSignature = await fetch4ByteSignature(selector);
+  let textSignature: string | null;
+  if (fourByteCache.has(selector)) {
+    textSignature = fourByteCache.get(selector) ?? null;
+  } else {
+    textSignature = await fetchFourByteSignature(selector);
+    fourByteCache.set(selector, textSignature);
+  }
   if (!textSignature) return null;
 
   const functionName = textSignature.split("(")[0] ?? textSignature;
 
-  // Try to decode params using the recovered signature
   let parameters: DecodedParameter[] = [];
   try {
-    const abi = parseAbi([`function ${textSignature}`] as readonly [string] as any);
+    // Dynamic ABI from a recovered signature — viem's parseAbi requires literal
+    // types, so we cast via unknown at the boundary.
+    const abi = (parseAbi as (sigs: readonly string[]) => Abi)([`function ${textSignature}`]);
     const { args } = decodeFunctionData({ abi, data: data as Hex });
-    const abiItem = (abi as any[]).find((item: any) => item.type === "function");
-    parameters = formatParameters(abiItem?.inputs || [], args || []);
+    const abiItem = (abi as unknown as readonly AbiItem[]).find((item) => item.type === "function");
+    parameters = formatParameters(abiItem?.inputs ?? [], args ?? []);
   } catch {
     // Can't decode params with 4bytes signature, that's ok
   }
@@ -351,10 +309,10 @@ async function tryFourBytes(action: RawAction): Promise<DecodedAction | null> {
 
 // --- Parameter formatting ---
 
-function formatParameters(inputs: any[], args: readonly any[] | any[]): DecodedParameter[] {
+function formatParameters(inputs: readonly AbiInput[], args: readonly unknown[]): DecodedParameter[] {
   if (!inputs || !args) return [];
 
-  return inputs.map((input: any, idx: number) => ({
+  return inputs.map((input, idx) => ({
     name: input.name || null,
     type: input.type || "unknown",
     value: stringifyValue(args[idx]),
@@ -363,13 +321,13 @@ function formatParameters(inputs: any[], args: readonly any[] | any[]): DecodedP
 }
 
 function formatParametersWithNatSpec(
-  inputs: any[],
-  args: readonly any[] | any[],
+  inputs: readonly AbiInput[],
+  args: readonly unknown[],
   paramNotices: Record<string, string>,
 ): DecodedParameter[] {
   if (!inputs || !args) return [];
 
-  return inputs.map((input: any, idx: number) => ({
+  return inputs.map((input, idx) => ({
     name: input.name || null,
     type: input.type || "unknown",
     value: stringifyValue(args[idx]),
@@ -377,7 +335,7 @@ function formatParametersWithNatSpec(
   }));
 }
 
-function stringifyValue(val: any): string {
+function stringifyValue(val: unknown): string {
   if (val === undefined || val === null) return "";
   if (typeof val === "bigint") return val.toString();
   if (typeof val === "string") return val;

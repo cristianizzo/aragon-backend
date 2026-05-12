@@ -51,13 +51,11 @@ function extractSourceCode(raw: string): string | null {
     cleaned = cleaned.slice(1, -1);
   }
 
-  // Try JSON multi-file format
   try {
-    const parsed = JSON.parse(cleaned);
-    if (parsed.sources) {
-      // Concatenate all source files
+    const parsed = JSON.parse(cleaned) as { sources?: Record<string, { content?: string }> } | string;
+    if (typeof parsed === "object" && parsed?.sources) {
       return Object.values(parsed.sources)
-        .map((s: any) => s.content || "")
+        .map((s) => s.content || "")
         .join("\n\n");
     }
     if (typeof parsed === "string") return parsed;
@@ -274,13 +272,13 @@ function parseNatSpecTags(lines: string[]): NatSpecTag {
       currentParamName = null;
     } else if (currentTag === "notice" && !line.startsWith("@")) {
       // Continuation of notice
-      result.notice = (result.notice || "") + " " + line;
+      result.notice = `${result.notice || ""} ${line}`;
     } else if (currentTag === "param" && currentParamName && !line.startsWith("@")) {
       // Continuation of param
-      result.params[currentParamName] = (result.params[currentParamName] || "") + " " + line;
+      result.params[currentParamName] = `${result.params[currentParamName] || ""} ${line}`;
     } else if (!currentTag && !line.startsWith("@")) {
       // Default text before any tag = notice
-      result.notice = result.notice ? result.notice + " " + line : line;
+      result.notice = result.notice ? `${result.notice} ${line}` : line;
     }
   }
 

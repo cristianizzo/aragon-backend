@@ -1,14 +1,20 @@
 import { ExecuteSelectorCondition } from "generated";
+import { getAddress } from "viem";
+import { decodeSelector } from "../effects/decodeSelector";
+import { nativeTransferPermissionId, selectorPermissionId } from "../ids";
 
 ExecuteSelectorCondition.SelectorAllowed.handler(async ({ event, context }) => {
   const chainId = event.chainId;
-  const conditionAddress = event.srcAddress;
+  const conditionAddress = getAddress(event.srcAddress);
+  const whereAddress = getAddress(event.params.where);
   const selector = event.params.selector;
-  const whereAddress = event.params.where;
-  const id = `${chainId}-${conditionAddress}-${selector}-${whereAddress}`;
+
+  // Resolve selector → function name + canonical signature so consumers
+  // can render the permission without keeping their own ABI registry.
+  const decoded = await context.effect(decodeSelector, selector);
 
   context.SelectorPermission.set({
-    id,
+    id: selectorPermissionId(chainId, conditionAddress, selector, whereAddress),
     chainId,
     conditionAddress,
     selector,
@@ -16,16 +22,13 @@ ExecuteSelectorCondition.SelectorAllowed.handler(async ({ event, context }) => {
     allowed: true,
     blockNumber: event.block.number,
     transactionHash: event.transaction.hash,
+    functionName: decoded.functionName ?? undefined,
+    functionSig: decoded.functionSig ?? undefined,
   });
 });
 
 ExecuteSelectorCondition.SelectorDisallowed.handler(async ({ event, context }) => {
-  const chainId = event.chainId;
-  const conditionAddress = event.srcAddress;
-  const selector = event.params.selector;
-  const whereAddress = event.params.where;
-  const id = `${chainId}-${conditionAddress}-${selector}-${whereAddress}`;
-
+  const id = selectorPermissionId(event.chainId, event.srcAddress, event.params.selector, event.params.where);
   const existing = await context.SelectorPermission.get(id);
   if (existing) {
     context.SelectorPermission.set({ ...existing, allowed: false });
@@ -34,12 +37,11 @@ ExecuteSelectorCondition.SelectorDisallowed.handler(async ({ event, context }) =
 
 ExecuteSelectorCondition.NativeTransfersAllowed.handler(async ({ event, context }) => {
   const chainId = event.chainId;
-  const conditionAddress = event.srcAddress;
-  const whereAddress = event.params.where;
-  const id = `${chainId}-${conditionAddress}-native-${whereAddress}`;
+  const conditionAddress = getAddress(event.srcAddress);
+  const whereAddress = getAddress(event.params.where);
 
   context.NativeTransferPermission.set({
-    id,
+    id: nativeTransferPermissionId(chainId, conditionAddress, whereAddress),
     chainId,
     conditionAddress,
     whereAddress,
@@ -50,11 +52,7 @@ ExecuteSelectorCondition.NativeTransfersAllowed.handler(async ({ event, context 
 });
 
 ExecuteSelectorCondition.NativeTransfersDisallowed.handler(async ({ event, context }) => {
-  const chainId = event.chainId;
-  const conditionAddress = event.srcAddress;
-  const whereAddress = event.params.where;
-  const id = `${chainId}-${conditionAddress}-native-${whereAddress}`;
-
+  const id = nativeTransferPermissionId(event.chainId, event.srcAddress, event.params.where);
   const existing = await context.NativeTransferPermission.get(id);
   if (existing) {
     context.NativeTransferPermission.set({ ...existing, allowed: false });
