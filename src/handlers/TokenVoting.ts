@@ -55,6 +55,9 @@ indexer.onEvent(
     const plugin = await context.Plugin.get(plugin_id);
     if (!plugin) return;
 
+    // Token-weighted snapshot at proposal creation block. `plugin.tokenAddress`
+    // was set when the plugin was installed (PSP extracts it from helpers). If
+    // absent (token not yet known), the frontend falls back to a live read.
     const totalSupply = plugin.tokenAddress
       ? await context.effect(fetchTokenTotalSupplyAtBlock, {
           tokenAddress: plugin.tokenAddress,
@@ -118,6 +121,8 @@ indexer.onEvent(
       memberAddress: getAddress(event.params.voter),
       voteOption: Number(event.params.voteOption),
       votingPower: event.params.votingPower,
+      // TokenVoting always references its underlying ERC20Votes token via
+      // `Plugin.tokenAddress` (set at install).
       tokenAddress: plugin.tokenAddress ?? undefined,
       blockNumber: event.block.number,
       transactionIndex: event.transaction.transactionIndex,

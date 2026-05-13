@@ -28,6 +28,7 @@ indexer.onEvent(
       memberAddress: getAddress(event.params.voter),
       voteOption: Number(event.params.voteOption),
       votingPower: event.params.votingPower,
+      // LockToVote's underlying ERC-20 governance token (set at install).
       tokenAddress: plugin.tokenAddress ?? undefined,
       blockNumber: event.block.number,
       transactionIndex: event.transaction.transactionIndex,
@@ -66,6 +67,11 @@ indexer.onEvent(
       context.Plugin.set({ ...plugin, interfaceType: PluginInterfaceType.LockToVote, isSupported: true });
     }
 
+    // Token-weighted snapshot at proposal creation block. For LockToVote the
+    // governance token is the underlying ERC-20 stored in `plugin.tokenAddress`
+    // (set during PSP install). Locked-amount accounting lives on the
+    // LockManager — captured separately if/when needed; for now we record the
+    // underlying token's totalSupply as the denominator.
     const totalSupply = plugin.tokenAddress
       ? await context.effect(fetchTokenTotalSupplyAtBlock, {
           tokenAddress: plugin.tokenAddress,
@@ -123,6 +129,9 @@ indexer.onEvent(
       context.Plugin.set({ ...plugin, interfaceType: PluginInterfaceType.LockToVote, isSupported: true });
     }
 
+    // Fetch the VE escrow's full settings via RPC if this plugin has a VE
+    // chain attached. Returns null if no escrow addresses are present
+    // (non-VE LockToVote variants); the field stays undefined in that case.
     const ve = plugin.votingEscrow as
       | { escrowAddress?: string; exitQueueAddress?: string; curveAddress?: string }
       | undefined;
@@ -148,6 +157,9 @@ indexer.onEvent(
       votingMode: Number(event.params.votingMode),
       supportThreshold: BigInt(event.params.supportThresholdRatio),
       minParticipation: BigInt(event.params.minParticipationRatio),
+      // LockToVote-specific extra knob: the absolute approval ratio (against
+      // total locked) that a proposal must hit to pass. Distinct from
+      // `supportThreshold` which is the YES-vs-NO ratio.
       minApprovalRatio: BigInt(event.params.minApprovalRatio),
       minDuration: BigInt(event.params.proposalDuration),
       minProposerVotingPower: event.params.minProposerVotingPower,

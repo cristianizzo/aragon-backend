@@ -43,6 +43,8 @@ indexer.onEvent(
 
     context.Campaign.set({ ...campaign, merkleRoot });
 
+    // Audit trail mirroring legacy `CampaignMerkleRoot` collection — preserves
+    // every set/update so consumers can reconstruct the merkle history.
     context.CampaignMerkleRootLog.set({
       id: campaignMerkleRootLogId(chainId, allocationStrategy, campaignId, event.transaction.hash, event.logIndex),
       chainId,
@@ -52,6 +54,9 @@ indexer.onEvent(
       allocationStrategy,
       merkleRoot,
       previousMerkleRoot: undefined,
+      // `totalMembers` is the leaf count for this root — sourced from
+      // off-chain merkle metadata when present (the event itself doesn't
+      // carry it). Leave null; enrichment can fill in later if needed.
       totalMembers: undefined,
       blockNumber: event.block.number,
       blockTimestamp: event.block.timestamp,

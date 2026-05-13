@@ -82,6 +82,10 @@ indexer.onEvent(
  * an array of `(to, value, data)` actions. Any action with non-zero `value`
  * transfers native out of the DAO. Multiple actions share one `logIndex` —
  * disambiguated via `actionIndex` in the Transaction id.
+ *
+ * V1 and V2 of the event differ only in trailing fields (`allowFailureMap` is
+ * v1-only) — the `actions` array sits at the same position in both. Handlers
+ * for both signatures funnel into this helper.
  */
 async function recordNativeWithdraws(
   context: EvmOnEventContext,

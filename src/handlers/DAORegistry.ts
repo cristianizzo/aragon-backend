@@ -9,6 +9,10 @@ import { validateString } from "../utils/validate";
 
 const llo = logger.logMeta.bind(null, { service: "handlers:DAORegistry" });
 
+// Tell Envio to start indexing events from the new DAO address. Runs in a
+// pre-handler phase: no async, no DB writes, only address registration so
+// subsequent DAO events (MetadataSet, Granted, ...) get routed to our DAO
+// handlers from this block forward.
 indexer.contractRegister(
   { contract: "DAORegistry", event: "DAORegistered" },
   async ({ event, context }) => {
@@ -29,6 +33,9 @@ indexer.onEvent(
     const [implementationAddress, version, existing] = await Promise.all([
       context.effect(fetchImplementationAddress, { proxyAddress: daoAddress, chainId }),
       context.effect(fetchDaoVersion, { daoAddress, chainId }),
+      // Stub-then-merge: in the DAOFactory creation tx, MetadataSet fires first
+      // (lower logIndex) and writes a stub Dao with metadata only. We preserve
+      // those metadata fields here while filling in the registration-time fields.
       context.Dao.get(id),
     ]);
 

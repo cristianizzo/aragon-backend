@@ -4,6 +4,23 @@ import { applyPluginMetadata } from "../services/pluginMetadata";
 import { createProposal, executeProposal } from "../services/proposal";
 import { pluginId } from "../utils/ids";
 
+/**
+ * Admin plugin = single-member instant execution. `ProposalCreated` and
+ * `ProposalExecuted` are typically emitted in the same transaction (the
+ * Admin contract executes the proposal as part of `executeProposal`). There
+ * is no Approve / VoteCast step — execution is the proposal.
+ *
+ * Membership lives in a separate contract announced once via
+ * `MembershipContractAnnounced` at install time. We capture that address on
+ * the Plugin row (`tokenAddress`-style stash via the Plugin entity) so the
+ * frontend can resolve "who is the admin".
+ *
+ * Proposal entity shape mirrors Multisig.ts so the same query path works for
+ * both. `voteCount` stays 0 (no votes), `executed` flips true in the
+ * Executed handler. We snapshot `membersCount = 1` since Admin is by
+ * definition single-signer.
+ */
+
 indexer.onEvent(
   { contract: "Admin", event: "AdminProposalCreated" },
   async ({ event, context }) => {
@@ -49,6 +66,11 @@ indexer.onEvent(
     }),
 );
 
+// Admin holds its membership in a separate contract (typically a single-EOA
+// "owner"). The address is announced once at install via this event. We stash
+// it on the Plugin row as `tokenAddress` so a single GraphQL query can
+// resolve "who can execute via this plugin" — same field used by
+// tokenVoting/lockToVote, just repurposed here for the admin address.
 indexer.onEvent(
   { contract: "Admin", event: "MembershipContractAnnounced" },
   async ({ event, context }) => {

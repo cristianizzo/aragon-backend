@@ -13,6 +13,11 @@ indexer.onEvent(
     const tokenId = event.params.tokenId.toString();
     const depositor = getAddress(event.params.depositor);
 
+    // Resolve the VE chain so we can stamp the sibling addresses (queue, NFT)
+    // onto the Lock row — lets a single Lock reconstruct the full pipeline
+    // without joining back to Plugin. Lookup is null for out-of-order events
+    // that beat the install-time Plugin write; the Lock just stays without
+    // those denorm columns in that edge case.
     const ve = await lookupVeChainByEscrow(context, { chainId, escrowAddress });
 
     context.Lock.set({
@@ -24,6 +29,9 @@ indexer.onEvent(
       tokenId,
       memberAddress: depositor,
       amount: event.params.value,
+      // VE epoch-math metadata stamped from the contract's Deposit event:
+      //   - `startTs` is the epoch start (used as `lock_age_t0`).
+      //   - `newTotalLocked` is the escrow's running total at this lock.
       epochStartAt: Number(event.params.startTs),
       totalLocked: event.params.newTotalLocked,
       blockNumber: event.block.number,
@@ -54,6 +62,9 @@ indexer.onEvent(
       isWithdrawn: true,
       withdrawnAt: event.block.timestamp,
       amount: 0n,
+      // Rich audit object mirroring legacy `Lock.lockWithdraw`. Captures the
+      // post-withdraw escrow total + epoch end so historical queries don't
+      // need to walk later events.
       lockWithdraw: {
         status: true,
         transactionHash: event.transaction.hash,
@@ -93,6 +104,12 @@ indexer.onEvent(
       transactionHash: event.transaction.hash,
     });
 
+    // Mirror the delegation onto the delegatee's TokenMember keyed by escrow
+    // address — VE plugins never emit ERC20Votes events, so the escrow
+    // address namespace is the only place per-NFT delegation state lives on
+    // TokenMember. `tokenIds` accumulates across delegations from different
+    // delegators; `delegateReceivedCount` is one bump per event regardless of
+    // batch size (matches an "incoming delegation relationship" semantics).
     await adjustDelegateRelationship(context, {
       chainId,
       tokenAddress: escrowAddress,
@@ -127,6 +144,9 @@ indexer.onEvent(
 
     context.Lock.set({ ...fromLock, amount: event.params._splitAmount1 });
 
+    // The new lock inherits VE-chain denorms + epoch metadata from the
+    // original — the split doesn't change escrow membership or the lock's
+    // start epoch.
     context.Lock.set({
       id: lockId(chainId, escrowAddress, newTokenId),
       chainId,
@@ -174,6 +194,9 @@ indexer.onEvent(
         amount: 0n,
         isWithdrawn: true,
         withdrawnAt: event.block.timestamp,
+        // Mirrors legacy `Lock.lockWithdraw` for the destroyed half. The
+        // merge event carries `_newTotalAmount` on the destination side, not
+        // the source, so we record the original `amount` as the burn value.
         lockWithdraw: {
           status: true,
           transactionHash: event.transaction.hash,
@@ -208,6 +231,7 @@ indexer.onEvent(
       });
     }
 
+    // Mirror onto delegatee's TokenMember (see TokensDelegated for rationale).
     await adjustDelegateRelationship(context, {
       chainId,
       tokenAddress: escrowAddress,

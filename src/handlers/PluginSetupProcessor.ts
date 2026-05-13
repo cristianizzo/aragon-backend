@@ -40,6 +40,7 @@ indexer.contractRegister(
 
       case PluginInterfaceType.TokenVoting:
       case PluginInterfaceType.AddresslistVoting: {
+        // Both share the same event surface as TokenVoting handlers.
         context.chain.TokenVoting.add(pluginAddress);
         const tokenAddress = tokenFromHelpers(helpers);
         if (tokenAddress) {
@@ -87,6 +88,10 @@ indexer.contractRegister(
 
       case PluginInterfaceType.Gauge: {
         context.chain.GaugeVoter.add(pluginAddress);
+        // Gauge plugins carry an IVotesAdapter / governance token in helpers.
+        // Best-effort registration so the token's events get tracked. The
+        // Plugin row's `tokenAddress` and the actual `Token` row are written
+        // in the InstallationPrepared handler.
         const gaugeToken = tokenFromHelpers(helpers);
         if (gaugeToken) context.chain.GovernanceERC20.add(gaugeToken);
         break;
@@ -118,6 +123,8 @@ indexer.onEvent(
     const daoAddress = getAddress(event.params.dao);
     const pluginAddress = getAddress(event.params.plugin);
 
+    // Skip if DAO doesn't exist — preserves legacy behaviour of not logging
+    // setup events for unknown DAOs.
     const dao = await context.Dao.get(daoId(chainId, daoAddress));
     if (!dao) return;
 
@@ -253,6 +260,8 @@ indexer.onEvent(
       sender: getAddress(event.params.sender),
       release: Number(event.params.versionTag[0]),
       build: Number(event.params.versionTag[1]),
+      // For UninstallationPrepared the permissions array is top-level on the
+      // event (not nested under a preparedSetupData struct).
       permissions: parsePermissions(event.params.permissions),
     });
   },
@@ -273,6 +282,7 @@ indexer.onEvent(
       daoAddress: getAddress(event.params.dao),
       pluginAddress,
       preparedSetupId: event.params.preparedSetupId,
+      // OSx `UninstallationApplied` event has no `appliedSetupId` field.
     });
 
     await setPluginStatus(context, {

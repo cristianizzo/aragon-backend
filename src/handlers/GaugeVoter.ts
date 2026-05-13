@@ -21,6 +21,11 @@ function extractCidFromString(uri: string | undefined): string | undefined {
   return undefined;
 }
 
+/**
+ * Fetch + parse gauge metadata (name / description / avatar / links). The
+ * payload shape matches the DAO metadata format so we reuse the same parser.
+ * Returns null on missing CID / fetch failure / parse failure.
+ */
 async function loadGaugeMetadata(
   context: EvmOnEventContext,
   metadataURI: string | undefined,
@@ -112,10 +117,16 @@ indexer.onEvent(
     const totalVotingPowerInGauge = event.params.totalVotingPowerInGauge;
     const totalVotingPowerInContract = event.params.totalVotingPowerInContract;
 
+    // Canonical row per (gauge, voter, epoch). Voted overwrites — when the
+    // same voter re-votes in the same epoch the row is updated, not appended.
     const canonical_id = canonicalGaugeVoteId(chainId, gaugeAddress, voterAddress, epoch);
     const existing = await context.GaugeVote.get(canonical_id);
+    // Append-only audit row keyed by logIndex (mirrors legacy `LogGaugeVote`).
+    // Lets consumers walk every Voted / Reset event in the order they fired.
     const audit_id = gaugeVoteId(chainId, gaugeAddress, voterAddress, epoch, event.logIndex, GaugeVoteKind.Vote);
 
+    // First-active-vote semantics: a row that doesn't exist OR is currently
+    // soft-cleared (`resetVoteTransactionHash` set) counts as fresh.
     const isFirstActiveVote = !existing || existing.resetVoteTransactionHash !== undefined;
 
     context.GaugeVote.set({
@@ -126,6 +137,11 @@ indexer.onEvent(
       voterAddress,
       epoch,
       votingPower: event.params.votingPowerCastForGauge,
+      // `persistentVote` defaults to false — the on-chain Voted event doesn't
+      // expose persistence, legacy derives it from the plugin's
+      // `enabledUpdatedVotingPowerHook` setting which we haven't wired through
+      // yet. Once that PluginSetting field is populated, set this from the
+      // active setting at vote time.
       persistentVote: false,
       resetVoteTransactionHash: undefined,
       blockNumber: event.block.number,
@@ -133,6 +149,8 @@ indexer.onEvent(
       transactionHash: event.transaction.hash,
     });
 
+    // Audit copy — identical shape, distinct id so the canonical row can be
+    // overwritten without losing history.
     context.GaugeVote.set({
       id: audit_id,
       chainId,
@@ -174,6 +192,8 @@ indexer.onEvent(
     const totalVotingPowerInGauge = event.params.totalVotingPowerInGauge;
     const totalVotingPowerInContract = event.params.totalVotingPowerInContract;
 
+    // Soft-clear: patch the canonical row in place — mirrors `Vote.voteCleared`.
+    // Decrement the member count only when there was actually an active vote.
     const canonical_id = canonicalGaugeVoteId(chainId, gaugeAddress, voterAddress, epoch);
     const existing = await context.GaugeVote.get(canonical_id);
     const hadActiveVote = existing !== undefined && existing.resetVoteTransactionHash === undefined;
@@ -185,6 +205,8 @@ indexer.onEvent(
       });
     }
 
+    // Append the Reset event row for audit. Distinct id (`-reset` suffix +
+    // logIndex) so it doesn't collide with the canonical row above.
     context.GaugeVote.set({
       id: gaugeVoteId(chainId, gaugeAddress, voterAddress, epoch, event.logIndex, GaugeVoteKind.Reset),
       chainId,
@@ -230,6 +252,12 @@ indexer.onEvent(
   },
 );
 
+/**
+ * Upsert the GaugeMetrics row for (gauge, epoch). The voting-power totals
+ * come straight from the event; `totalMemberVoteCount` deltas in by
+ * +1 / -1 / 0 depending on whether this event flipped the voter's active
+ * state. Clamped at 0 to be defensive against double-resets.
+ */
 async function bumpGaugeMetrics(
   context: EvmOnEventContext,
   args: {

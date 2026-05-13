@@ -21,6 +21,9 @@ indexer.onEvent(
         exitQueued: true,
         exitQueuedAt: event.block.timestamp,
         exitCancelled: false,
+        // Rich audit object mirroring legacy `Lock.lockExit`. `holder` is
+        // the address that initiated the exit (may differ from the lock
+        // owner when delegated).
         lockExit: {
           status: true,
           transactionHash: event.transaction.hash,
@@ -79,6 +82,8 @@ indexer.onEvent(
         ...lock,
         exitQueued: false,
         exitCancelled: true,
+        // Clearing `lockExit` matches legacy `existingLock.lockExit = null`
+        // on cancel so consumers don't see a stale exit countdown.
         lockExit: undefined,
       });
     }

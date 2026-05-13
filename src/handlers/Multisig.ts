@@ -174,6 +174,7 @@ indexer.onEvent(
       memberAddress: getAddress(event.params.approver),
       voteOption: VoteOption.Yes,
       votingPower: undefined,
+      // Multisig is membership-based — no voting token to denorm.
       tokenAddress: undefined,
       blockNumber: event.block.number,
       transactionIndex: event.transaction.transactionIndex,

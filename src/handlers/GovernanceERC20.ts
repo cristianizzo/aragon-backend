@@ -62,6 +62,8 @@ indexer.onEvent(
       ]);
     }
 
+    // ZERO_ADDRESS guard inside addMember filters fromDelegate=0x0 (no prior
+    // delegate) or toDelegate=0x0 (revoking).
     await Promise.all([
       addMember(context, { address: delegator, blockNumber: event.block.number }),
       addMember(context, { address: fromDelegate, blockNumber: event.block.number }),
@@ -99,6 +101,9 @@ indexer.onEvent(
       isGovernance: true,
     });
 
+    // Preserve `tokenIds` / `delegateReceivedCount` if a DelegateChanged for
+    // this delegate already wrote a row in the same batch. ERC20Votes never
+    // populates `tokenIds` here (no per-NFT identity).
     const id = tokenMemberId(chainId, tokenAddress, delegate);
     const existing = await context.TokenMember.get(id);
     context.TokenMember.set({

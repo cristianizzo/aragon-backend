@@ -93,6 +93,8 @@ indexer.onEvent(
       allowFailureMap: event.params.allowFailureMap,
       startDate: event.params.startDate,
       endDate: event.params.endDate,
+      // SPP routes through stage bodies; per-proposal snapshot lives on the
+      // sub-bodies (each with their own semantics), not at the SPP level.
       snapshot: undefined,
       blockNumber: event.block.number,
       blockTimestamp: event.block.timestamp,

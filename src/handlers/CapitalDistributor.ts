@@ -8,7 +8,8 @@ import { extractIpfsCid, parseCampaignMetadata } from "../utils/metadata";
 
 // Register the campaign's allocation-strategy contract so its
 // `MerkleCampaignSet` / `MerkleCampaignUpdated` events route to our
-// `CampaignAllocationStrategy.ts` handlers.
+// `CampaignAllocationStrategy.ts` handlers. Mirrors legacy
+// `LogCampaignStrategy.start(allocationStrategy, ...)`.
 indexer.contractRegister(
   { contract: "CapitalDistributor", event: "CampaignCreated" },
   async ({ event, context }) => {
@@ -24,6 +25,9 @@ indexer.onEvent(
     const campaignId = event.params.campaignId.toString();
     const allocationStrategy = getAddress(event.params.allocationStrategy);
 
+    // Parse campaign metadata from IPFS (best-effort — the indexer keeps the
+    // raw URI either way; null parse just leaves the title/description fields
+    // null until an enrichment retry).
     const cid = extractIpfsCid(event.params.metadataUri);
     const raw = cid ? await context.effect(fetchIpfsJson, cid) : null;
     const metadata = parseCampaignMetadata(raw);
@@ -46,6 +50,9 @@ indexer.onEvent(
       merkleRoot: undefined,
       isPaused: false,
       isEnded: false,
+      // Running aggregates — maintained by the PayoutClaimed handler below.
+      // `totalRewards` would come from the campaign metadata's budget field
+      // when present; default null leaves it to enrichment.
       claimCount: 0,
       totalClaimed: 0n,
       totalRewards: undefined,
@@ -68,6 +75,9 @@ indexer.onEvent(
     const campaign = await context.Campaign.get(campaign_id);
     if (!campaign) return;
 
+    // CampaignReward row keyed by (campaign, claimer) — `claims[]` is an
+    // append-only audit array of every PayoutClaimed for this pair. Dedup
+    // by transactionHash so an event replay doesn't double-credit.
     const reward_id = campaignRewardId(chainId, pluginAddress, campaignIndex, recipient);
     const existing = await context.CampaignReward.get(reward_id);
     const prevClaims = Array.isArray(existing?.claims) ? (existing.claims as Array<Record<string, unknown>>) : [];
