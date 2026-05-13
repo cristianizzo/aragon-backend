@@ -29,14 +29,6 @@ ERC721.Transfer.handler(
     if (!fromDao && !toDao) return;
 
     const tokenAddress = getAddress(event.srcAddress);
-    await addToken(context, {
-      chainId,
-      tokenAddress,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
-    });
-
     const tokenId = event.params.tokenId.toString();
     const txCommon = {
       chainId,
@@ -60,15 +52,32 @@ ERC721.Transfer.handler(
       blockTimestamp: event.block.timestamp,
     };
 
+    // Run addToken + per-side asset updates in parallel — same rationale
+    // as the ERC-20 wildcard handler: addToken's first-sight cost overlaps
+    // with the asset get/set work, and the two sides write to distinct
+    // Asset rows so concurrent execution is safe.
+    const sideTasks: Array<Promise<void>> = [
+      addToken(context, {
+        chainId,
+        tokenAddress,
+        blockNumber: event.block.number,
+        blockTimestamp: event.block.timestamp,
+        transactionHash: event.transaction.hash,
+      }),
+    ];
     if (toDao) {
       recordTransaction(context, { ...txCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
-      await updateDaoAssets(context, { ...assetCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
+      sideTasks.push(
+        updateDaoAssets(context, { ...assetCommon, daoAddress: toAddress, side: TransactionSide.Deposit }),
+      );
     }
-
     if (fromDao) {
       recordTransaction(context, { ...txCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
-      await updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
+      sideTasks.push(
+        updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw }),
+      );
     }
+    await Promise.all(sideTasks);
   },
   { wildcard: true },
 );
