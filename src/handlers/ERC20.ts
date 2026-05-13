@@ -1,4 +1,4 @@
-import { ERC20 } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { TransactionSide, TransactionType } from "../enums";
 import { updateDaoAssets } from "../services/asset";
@@ -16,7 +16,8 @@ import { daoId } from "../utils/ids";
 // are written — one withdraw perspective for the sender, one deposit
 // perspective for the receiver — disambiguated via `daoAddress` in the
 // transaction id.
-ERC20.Transfer.handler(
+indexer.onEvent(
+  { contract: "ERC20", event: "Transfer", wildcard: true },
   async ({ event, context }) => {
     const value = event.params.value;
     if (value === 0n) return;
@@ -71,5 +72,4 @@ ERC20.Transfer.handler(
       await updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
     }
   },
-  { wildcard: true },
 );

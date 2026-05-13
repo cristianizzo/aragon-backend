@@ -1,4 +1,4 @@
-import type { HandlerContext } from "generated";
+import type { EvmOnEventContext as HandlerContext } from "envio";
 import { getAddress } from "viem";
 import { multisig as multisigAbi, tokenVoting as tokenVotingAbi } from "../abis";
 import { fetchTxReceiptLogs } from "../effects/txReceipt";
@@ -122,7 +122,15 @@ interface StubPluginArgs {
   // blob stored on Plugin; `rawPermissions` is the original event tuple
   // that we walk to extract the proposal-creation condition address.
   permissions: unknown;
-  rawPermissions: ReadonlyArray<readonly [bigint | number, string, string, string, string]> | undefined;
+  rawPermissions:
+    | ReadonlyArray<{
+        readonly 0: bigint | number;
+        readonly 1: string;
+        readonly 2: string;
+        readonly 3: string;
+        readonly 4: string;
+      }>
+    | undefined;
   blockNumber: number;
   blockTimestamp: number;
   transactionHash: string;

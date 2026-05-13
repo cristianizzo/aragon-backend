@@ -1,4 +1,4 @@
-import { ERC721 } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { TransactionSide, TransactionType } from "../enums";
 import { updateDaoAssets } from "../services/asset";
@@ -11,12 +11,8 @@ import { daoId } from "../utils/ids";
 // being `indexed` means logs with 4 topics route here and 3-topic ERC-20
 // logs route to `ERC20.ts`. Per-perspective row emission (from + to)
 // matches the ERC-20 handler so a DAO-to-DAO transfer produces two rows.
-//
-// `value` on the Transaction entity is set to `1n` since ERC-721 transfers
-// always move a single NFT. The actual NFT id is on `Transaction.tokenId`.
-// `Asset.amount` accumulates the NFT count: deposits add 1, withdrawals
-// subtract 1.
-ERC721.Transfer.handler(
+indexer.onEvent(
+  { contract: "ERC721", event: "Transfer", wildcard: true },
   async ({ event, context }) => {
     const { chainId } = event;
     const fromAddress = getAddress(event.params.from);
@@ -70,5 +66,4 @@ ERC721.Transfer.handler(
       await updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
     }
   },
-  { wildcard: true },
 );

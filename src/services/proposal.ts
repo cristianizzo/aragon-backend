@@ -1,4 +1,4 @@
-import type { HandlerContext } from "generated";
+import type { EvmOnEventContext as HandlerContext } from "envio";
 import { decodeProposalActions } from "../effects/decodeActions";
 import { fetchIpfsJson } from "../effects/ipfs";
 import { PluginActivityType, PluginInterfaceType, ProposalStatus } from "../enums";
@@ -41,7 +41,7 @@ interface CreateProposalArgs {
   // IPFS fetch, and parsing are owned here so every plugin gets identical
   // metadata handling.
   metadata: string;
-  actions: ReadonlyArray<readonly [string, bigint, string]>;
+  actions: ReadonlyArray<{ readonly 0: string; readonly 1: bigint; readonly 2: string }>;
   allowFailureMap?: bigint;
   startDate?: bigint;
   endDate?: bigint;

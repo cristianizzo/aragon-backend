@@ -1,4 +1,4 @@
-import type { HandlerContext } from "generated";
+import type { EvmOnEventContext as HandlerContext } from "envio";
 import { getAddress } from "viem";
 import { type AddressBrand, detectAddressBrand } from "../effects/addressBrand";
 import logger from "../helpers/logger";
@@ -9,24 +9,31 @@ const llo = logger.logMeta.bind(null, { service: "services:sppStages" });
 /**
  * Body within a stage as decoded from `StagesUpdated`.
  * Tuple shape: `(address addr, bool isManual, bool tryAdvance, uint8 resultType)`.
+ *
+ * V3 codegen represents Solidity tuples as object-keyed records.
  */
-export type StageBody = readonly [string, boolean, boolean, bigint | number];
+export type StageBody = {
+  readonly 0: string;
+  readonly 1: boolean;
+  readonly 2: boolean;
+  readonly 3: bigint | number;
+};
 
 /**
  * Stage tuple from `StagesUpdated`:
  * `(Body[] bodies, uint64 maxAdvance, uint64 minAdvance, uint64 voteDuration,
  *   uint16 approvalThreshold, uint16 vetoThreshold, bool cancelable, bool editable)`
  */
-export type StageTuple = readonly [
-  ReadonlyArray<StageBody>,
-  bigint,
-  bigint,
-  bigint,
-  bigint | number,
-  bigint | number,
-  boolean,
-  boolean,
-];
+export type StageTuple = {
+  readonly 0: ReadonlyArray<StageBody>;
+  readonly 1: bigint;
+  readonly 2: bigint;
+  readonly 3: bigint;
+  readonly 4: bigint | number;
+  readonly 5: bigint | number;
+  readonly 6: boolean;
+  readonly 7: boolean;
+};
 
 /**
  * Apply a `StagesUpdated` event from an SPP plugin.
@@ -75,6 +82,7 @@ export async function applyStagesUpdated(
   for (const stage of args.stages) {
     for (const body of stage[0]) uniqueBodyAddresses.add(getAddress(body[0]));
   }
+  // Note: structurally identical to before — kept for clarity that stage[0] is the bodies array.
   const brandLookup = new Map<string, AddressBrand>();
   await Promise.all(
     Array.from(uniqueBodyAddresses).map(async (address) => {
@@ -86,8 +94,14 @@ export async function applyStagesUpdated(
   );
 
   const formattedStages = args.stages.map((stage, stageIndex) => {
-    const [bodies, maxAdvance, minAdvance, voteDuration, approvalThreshold, vetoThreshold, cancelable, editable] =
-      stage;
+    const bodies = stage[0];
+    const maxAdvance = stage[1];
+    const minAdvance = stage[2];
+    const voteDuration = stage[3];
+    const approvalThreshold = stage[4];
+    const vetoThreshold = stage[5];
+    const cancelable = stage[6];
+    const editable = stage[7];
     const stageName = typeof stageNames[stageIndex] === "string" ? (stageNames[stageIndex] as string) : undefined;
     return {
       stageIndex,
@@ -105,8 +119,11 @@ export async function applyStagesUpdated(
       // `Setting.stages[].plugins[]` (`allowedBody` / `proposalType`) AND
       // our existing `tryAdvance` / `resultType`. Both are projections of
       // the same on-chain tuple components.
-      bodies: bodies.map(([addr, isManual, tryAdvance, resultType]) => {
-        const address = getAddress(addr);
+      bodies: bodies.map((body) => {
+        const address = getAddress(body[0]);
+        const isManual = body[1];
+        const tryAdvance = body[2];
+        const resultType = body[3];
         return {
           address,
           isManual,

@@ -1,4 +1,4 @@
-import type { HandlerContext } from "generated";
+import type { EvmOnEventContext as HandlerContext } from "envio";
 
 /**
  * Resolve the VE-chain sibling addresses (exit queue, NFT-lock contract)

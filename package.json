@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "codegen": "envio codegen && cd generated && pnpm install --shamefully-hoist --ignore-workspace && npx rescript build",
+    "codegen": "envio codegen",
     "dev": "envio dev",
     "start": "envio start",
     "status": "docker exec envio-postgres psql -U postgres -d envio-dev -c \"SELECT id as chain, progress_block, source_block, events_processed, ready_at FROM envio_chains ORDER BY id;\"",
@@ -22,13 +22,10 @@
   },
   "dependencies": {
     "bottleneck": "^2.19.5",
-    "envio": "3.0.0-alpha.18",
+    "envio": "3.0.0-rc.0",
     "logzio-nodejs": "^2.5.0",
     "winston": "^3.19.0",
     "winston-transport": "^4.9.0"
-  },
-  "optionalDependencies": {
-    "generated": "link:./generated"
   },
   "engines": {
     "node": ">=22.0.0"
