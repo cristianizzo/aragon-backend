@@ -32,14 +32,6 @@ ERC20.Transfer.handler(
     if (!fromDao && !toDao) return;
 
     const tokenAddress = getAddress(event.srcAddress);
-    await addToken(context, {
-      chainId,
-      tokenAddress,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
-    });
-
     const txCommon = {
       chainId,
       blockNumber: event.block.number,
@@ -61,15 +53,32 @@ ERC20.Transfer.handler(
       blockTimestamp: event.block.timestamp,
     };
 
+    // Run addToken + per-side asset updates in parallel. addToken's first-
+    // sight cost (RPC + DaoPermission lookup) overlaps with the asset
+    // get/set work; sides write to different Asset rows so no race even
+    // when both fromDao and toDao are present.
+    const sideTasks: Array<Promise<void>> = [
+      addToken(context, {
+        chainId,
+        tokenAddress,
+        blockNumber: event.block.number,
+        blockTimestamp: event.block.timestamp,
+        transactionHash: event.transaction.hash,
+      }),
+    ];
     if (toDao) {
       recordTransaction(context, { ...txCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
-      await updateDaoAssets(context, { ...assetCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
+      sideTasks.push(
+        updateDaoAssets(context, { ...assetCommon, daoAddress: toAddress, side: TransactionSide.Deposit }),
+      );
     }
-
     if (fromDao) {
       recordTransaction(context, { ...txCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
-      await updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
+      sideTasks.push(
+        updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw }),
+      );
     }
+    await Promise.all(sideTasks);
   },
   { wildcard: true },
 );
