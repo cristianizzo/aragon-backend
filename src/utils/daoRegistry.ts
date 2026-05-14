@@ -23,9 +23,14 @@ import { indexer } from "envio";
  * the framework adds HyperSync-level filtering for wildcard handlers, at
  * which point this helper will be obsolete and we can drop it.
  */
+// Cached set is stored as a plain `Set` internally so we can populate it,
+// but exposed as `ReadonlySet` to callers — the same instance is reused
+// across handler calls, so an accidental `add` / `delete` / `clear` would
+// leak globally and silently corrupt DAO filtering. Enforcing readonly at
+// the API boundary makes that mistake a type error.
 const daoSetCache = new Map<number, { ref: readonly string[]; set: Set<string> }>();
 
-export function getDaoSet(chainId: number): Set<string> {
+export function getDaoSet(chainId: number): ReadonlySet<string> {
   // `indexer.chains` is typed with literal chain ids (e.g. `1`, `137`); a
   // plain `number` index breaks the literal lookup. We accept any number
   // at the boundary (callers pass `event.chainId`) and cast — the underlying
