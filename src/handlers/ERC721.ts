@@ -4,13 +4,16 @@ import { TransactionSide, TransactionType } from "../enums";
 import { updateDaoAssets } from "../services/asset";
 import { addToken } from "../services/token";
 import { recordTransaction } from "../services/transaction";
-import { daoId } from "../utils/ids";
+import { getDaoSet } from "../utils/daoRegistry";
 
 // Wildcard ERC-721 Transfer subscription — mirrors the ERC-20 wildcard
 // handler. Topic0 collides with ERC-20's Transfer, but the third param
 // being `indexed` means logs with 4 topics route here and 3-topic ERC-20
 // logs route to `ERC20.ts`. Per-perspective row emission (from + to)
 // matches the ERC-20 handler so a DAO-to-DAO transfer produces two rows.
+//
+// DAO-membership check uses `getDaoSet` (in-memory address registry) — no
+// per-event DB lookup. See `src/utils/daoRegistry.ts` for the rationale.
 //
 // `value` on the Transaction entity is set to `1n` since ERC-721 transfers
 // always move a single NFT. The actual NFT id is on `Transaction.tokenId`.
@@ -21,10 +24,9 @@ indexer.onEvent({ contract: "ERC721", event: "Transfer", wildcard: true }, async
   const fromAddress = getAddress(event.params.from);
   const toAddress = getAddress(event.params.to);
 
-  const [fromDao, toDao] = await Promise.all([
-    context.Dao.get(daoId(chainId, fromAddress)),
-    context.Dao.get(daoId(chainId, toAddress)),
-  ]);
+  const daos = getDaoSet(chainId);
+  const fromDao = daos.has(fromAddress);
+  const toDao = daos.has(toAddress);
   if (!fromDao && !toDao) return;
 
   const tokenAddress = getAddress(event.srcAddress);
