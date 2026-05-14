@@ -1,8 +1,8 @@
-import { PluginRepoRegistry } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { pluginRepoId } from "../utils/ids";
 
-PluginRepoRegistry.PluginRepoRegistered.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "PluginRepoRegistry", event: "PluginRepoRegistered" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const address = getAddress(event.params.pluginRepo);
   const id = pluginRepoId(chainId, address);

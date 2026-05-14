@@ -1,4 +1,4 @@
-import { ERC721 } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { TransactionSide, TransactionType } from "../enums";
 import { updateDaoAssets } from "../services/asset";
@@ -16,68 +16,63 @@ import { daoId } from "../utils/ids";
 // always move a single NFT. The actual NFT id is on `Transaction.tokenId`.
 // `Asset.amount` accumulates the NFT count: deposits add 1, withdrawals
 // subtract 1.
-ERC721.Transfer.handler(
-  async ({ event, context }) => {
-    const { chainId } = event;
-    const fromAddress = getAddress(event.params.from);
-    const toAddress = getAddress(event.params.to);
+indexer.onEvent({ contract: "ERC721", event: "Transfer", wildcard: true }, async ({ event, context }) => {
+  const { chainId } = event;
+  const fromAddress = getAddress(event.params.from);
+  const toAddress = getAddress(event.params.to);
 
-    const [fromDao, toDao] = await Promise.all([
-      context.Dao.get(daoId(chainId, fromAddress)),
-      context.Dao.get(daoId(chainId, toAddress)),
-    ]);
-    if (!fromDao && !toDao) return;
+  const [fromDao, toDao] = await Promise.all([
+    context.Dao.get(daoId(chainId, fromAddress)),
+    context.Dao.get(daoId(chainId, toAddress)),
+  ]);
+  if (!fromDao && !toDao) return;
 
-    const tokenAddress = getAddress(event.srcAddress);
-    const tokenId = event.params.tokenId.toString();
-    const txCommon = {
+  const tokenAddress = getAddress(event.srcAddress);
+  const tokenId = event.params.tokenId.toString();
+  const txCommon = {
+    chainId,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+    transactionIndex: event.transaction.transactionIndex,
+    logIndex: event.logIndex,
+    type: TransactionType.Erc721,
+    fromAddress,
+    toAddress,
+    tokenAddress,
+    value: 1n,
+    tokenId,
+  };
+  const assetCommon = {
+    chainId,
+    tokenAddress,
+    amount: 1n,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+  };
+
+  // Run addToken + per-side asset updates in parallel — same rationale
+  // as the ERC-20 wildcard handler: addToken's first-sight cost overlaps
+  // with the asset get/set work, and the two sides write to distinct
+  // Asset rows so concurrent execution is safe.
+  const sideTasks: Array<Promise<void>> = [
+    addToken(context, {
       chainId,
+      tokenAddress,
       blockNumber: event.block.number,
       blockTimestamp: event.block.timestamp,
       transactionHash: event.transaction.hash,
-      transactionIndex: event.transaction.transactionIndex,
-      logIndex: event.logIndex,
-      type: TransactionType.Erc721,
-      fromAddress,
-      toAddress,
-      tokenAddress,
-      value: 1n,
-      tokenId,
-    };
-    const assetCommon = {
-      chainId,
-      tokenAddress,
-      amount: 1n,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-    };
-
-    // Run addToken + per-side asset updates in parallel — same rationale
-    // as the ERC-20 wildcard handler: addToken's first-sight cost overlaps
-    // with the asset get/set work, and the two sides write to distinct
-    // Asset rows so concurrent execution is safe.
-    const sideTasks: Array<Promise<void>> = [
-      addToken(context, {
-        chainId,
-        tokenAddress,
-        blockNumber: event.block.number,
-        blockTimestamp: event.block.timestamp,
-        transactionHash: event.transaction.hash,
-      }),
-    ];
-    if (toDao) {
-      recordTransaction(context, { ...txCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
-      sideTasks.push(
-        updateDaoAssets(context, { ...assetCommon, daoAddress: toAddress, side: TransactionSide.Deposit }),
-      );
-    }
-    if (fromDao) {
-      recordTransaction(context, { ...txCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
-      sideTasks.push(
-        updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw }),
-      );
-    }
-    await Promise.all(sideTasks);
-  },
-  { wildcard: true },
-);
+    }),
+  ];
+  if (toDao) {
+    recordTransaction(context, { ...txCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
+    sideTasks.push(updateDaoAssets(context, { ...assetCommon, daoAddress: toAddress, side: TransactionSide.Deposit }));
+  }
+  if (fromDao) {
+    recordTransaction(context, { ...txCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
+    sideTasks.push(
+      updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw }),
+    );
+  }
+  await Promise.all(sideTasks);
+});

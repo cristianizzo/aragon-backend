@@ -1,4 +1,4 @@
-import { GovernanceERC20 } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { ZERO_ADDRESS } from "../constants";
 import { addMember } from "../services/member";
@@ -12,7 +12,7 @@ import { eventLogId, tokenMemberId } from "../utils/ids";
 // this, a governance token whose Transfer event isn't seen in the indexed
 // range (or which never transfers, just delegates) would never get a Token
 // row. Mirrors legacy `GovernanceErc20Handler` ↔ `ProxyToken.saveAndGetToken`.
-GovernanceERC20.DelegateChanged.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "GovernanceERC20", event: "DelegateChanged" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const tokenAddress = getAddress(event.srcAddress);
   const delegator = getAddress(event.params.delegator);
@@ -69,7 +69,7 @@ GovernanceERC20.DelegateChanged.handler(async ({ event, context }) => {
   ]);
 });
 
-GovernanceERC20.DelegateVotesChanged.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "GovernanceERC20", event: "DelegateVotesChanged" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const tokenAddress = getAddress(event.srcAddress);
   const delegate = getAddress(event.params.delegate);

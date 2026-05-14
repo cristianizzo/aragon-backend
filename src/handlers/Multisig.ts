@@ -1,4 +1,4 @@
-import { Multisig } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { VoteOption } from "../constants";
 import { PluginInterfaceType } from "../enums";
@@ -8,7 +8,7 @@ import { createProposal, executeProposal } from "../services/proposal";
 import { recordVote } from "../services/vote";
 import { pluginId, pluginMemberId, settingId } from "../utils/ids";
 
-Multisig.MultisigSettingsUpdated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "Multisig", event: "MultisigSettingsUpdated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -43,7 +43,7 @@ Multisig.MultisigSettingsUpdated.handler(async ({ event, context }) => {
   });
 });
 
-Multisig.MembersAdded.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "Multisig", event: "MembersAdded" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -73,7 +73,7 @@ Multisig.MembersAdded.handler(async ({ event, context }) => {
   }
 });
 
-Multisig.MembersRemoved.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "Multisig", event: "MembersRemoved" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -94,7 +94,7 @@ Multisig.MembersRemoved.handler(async ({ event, context }) => {
   }
 });
 
-Multisig.MultisigProposalCreated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "Multisig", event: "MultisigProposalCreated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -129,7 +129,7 @@ Multisig.MultisigProposalCreated.handler(async ({ event, context }) => {
   });
 });
 
-Multisig.MultisigProposalExecuted.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "Multisig", event: "MultisigProposalExecuted" }, async ({ event, context }) =>
   executeProposal(context, {
     chainId: event.chainId,
     pluginAddress: getAddress(event.srcAddress),
@@ -140,7 +140,7 @@ Multisig.MultisigProposalExecuted.handler(async ({ event, context }) =>
   }),
 );
 
-Multisig.Approved.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "Multisig", event: "Approved" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -168,7 +168,7 @@ Multisig.Approved.handler(async ({ event, context }) => {
   });
 });
 
-Multisig.MultisigMetadataSet.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "Multisig", event: "MultisigMetadataSet" }, async ({ event, context }) => {
   await applyPluginMetadata(context, {
     chainId: event.chainId,
     pluginAddress: event.srcAddress,

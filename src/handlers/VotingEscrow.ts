@@ -1,11 +1,11 @@
-import { VotingEscrow } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { addMember } from "../services/member";
 import { adjustDelegateRelationship } from "../services/tokenMember";
 import { lookupVeChainByEscrow } from "../services/veChain";
 import { lockId, tokenDelegationId } from "../utils/ids";
 
-VotingEscrow.Deposit.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "VotingEscrow", event: "Deposit" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const escrowAddress = getAddress(event.srcAddress);
   const tokenId = event.params.tokenId.toString();
@@ -47,7 +47,7 @@ VotingEscrow.Deposit.handler(async ({ event, context }) => {
   await addMember(context, { address: depositor, blockNumber: event.block.number });
 });
 
-VotingEscrow.Withdraw.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "VotingEscrow", event: "Withdraw" }, async ({ event, context }) => {
   const id = lockId(event.chainId, event.srcAddress, event.params.tokenId.toString());
   const lock = await context.Lock.get(id);
   if (!lock) return;
@@ -73,11 +73,11 @@ VotingEscrow.Withdraw.handler(async ({ event, context }) => {
   await addMember(context, { address: lock.memberAddress, blockNumber: event.block.number });
 });
 
-VotingEscrow.MinDepositSet.handler(async () => {
+indexer.onEvent({ contract: "VotingEscrow", event: "MinDepositSet" }, async () => {
   // Placeholder — informational, no entity update needed yet.
 });
 
-VotingEscrow.TokensDelegated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "VotingEscrow", event: "TokensDelegated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const escrowAddress = getAddress(event.srcAddress);
   const delegator = getAddress(event.params.sender);
@@ -122,7 +122,7 @@ VotingEscrow.TokensDelegated.handler(async ({ event, context }) => {
 // inherits owner + escrow from the original (the contract guarantees both
 // halves are still held by the same address). Mirrors legacy
 // `veGovernance.lockSplit`.
-VotingEscrow.Split.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "VotingEscrow", event: "Split" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const escrowAddress = getAddress(event.srcAddress);
   const fromTokenId = event.params._from.toString();
@@ -163,7 +163,7 @@ VotingEscrow.Split.handler(async ({ event, context }) => {
 // Lock NFT merge. `_from` is destroyed (marked withdrawn so historical
 // queries still see the row); `_to` absorbs the combined `_newTotalAmount`.
 // Mirrors legacy `veGovernance.lockMerge`.
-VotingEscrow.Merged.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "VotingEscrow", event: "Merged" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const escrowAddress = getAddress(event.srcAddress);
   const fromTokenId = event.params._from.toString();
@@ -196,7 +196,7 @@ VotingEscrow.Merged.handler(async ({ event, context }) => {
   }
 });
 
-VotingEscrow.TokensUndelegated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "VotingEscrow", event: "TokensUndelegated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const escrowAddress = getAddress(event.srcAddress);
   const delegator = getAddress(event.params.sender);

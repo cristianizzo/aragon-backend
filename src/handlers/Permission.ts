@@ -1,4 +1,4 @@
-import { DAO } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import {
   EXECUTE_PERMISSION_ID,
@@ -39,15 +39,15 @@ const llo = logger.logMeta.bind(null, { service: "handlers:Permission" });
 
 // Register condition addresses so subsequent ExecuteSelectorCondition events
 // (SelectorAllowed / NativeTransfersAllowed / ...) get routed to our handlers.
-DAO.Granted.contractRegister(({ event, context }) => {
+indexer.contractRegister({ contract: "DAO", event: "Granted" }, async ({ event, context }) => {
   const condition = event.params.condition;
   if (!condition || condition === ZERO_ADDRESS) return;
   const checksummed = getAddress(condition);
   if (PRECOMPILE_ADDRESSES.has(checksummed)) return;
-  context.addExecuteSelectorCondition(checksummed);
+  context.chain.ExecuteSelectorCondition.add(checksummed);
 });
 
-DAO.Granted.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "DAO", event: "Granted" }, async ({ event, context }) => {
   const { chainId } = event;
   const daoAddress = getAddress(event.srcAddress);
   const dao_id = daoId(chainId, daoAddress);
@@ -165,7 +165,7 @@ DAO.Granted.handler(async ({ event, context }) => {
   }
 });
 
-DAO.Revoked.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "DAO", event: "Revoked" }, async ({ event, context }) => {
   const { chainId } = event;
   const daoAddress = getAddress(event.srcAddress);
   const dao_id = daoId(chainId, daoAddress);

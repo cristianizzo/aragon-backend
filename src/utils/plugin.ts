@@ -2,6 +2,16 @@ import { getAddress } from "viem";
 import { CREATE_PROPOSAL_PERMISSION_ID, ZERO_ADDRESS } from "../constants";
 import { PluginInterfaceType } from "../enums";
 
+// V3 codegen models Solidity tuples as object-keyed records. The runtime
+// values are still JS arrays, but the TS types index by numeric keys.
+export type RawPermission = {
+  readonly 0: bigint | number;
+  readonly 1: string;
+  readonly 2: string;
+  readonly 3: string;
+  readonly 4: string;
+};
+
 /**
  * Parse the `MultiTargetPermission[]` array attached to PSP prepared events.
  * Tuple shape: `[operation, where, who, condition, permissionId]` where
@@ -10,16 +20,14 @@ import { PluginInterfaceType } from "../enums";
  * `condition` is `ZERO_ADDRESS` for plain Grant/Revoke — normalize to
  * `undefined` so consumers can `if (p.condition)` cleanly.
  */
-export function parsePermissions(
-  raw: ReadonlyArray<readonly [bigint | number, string, string, string, string]> | undefined,
-): unknown {
+export function parsePermissions(raw: readonly RawPermission[] | undefined): unknown {
   if (!raw || raw.length === 0) return undefined;
-  return raw.map(([operation, where, who, condition, permissionId]) => ({
-    operation: Number(operation),
-    where: getAddress(where),
-    who: getAddress(who),
-    condition: condition && condition !== ZERO_ADDRESS ? getAddress(condition) : undefined,
-    permissionId,
+  return raw.map((p) => ({
+    operation: Number(p[0]),
+    where: getAddress(p[1]),
+    who: getAddress(p[2]),
+    condition: p[3] && p[3] !== ZERO_ADDRESS ? getAddress(p[3]) : undefined,
+    permissionId: p[4],
   }));
 }
 
@@ -45,11 +53,11 @@ export function tokenFromHelpers(helpers: readonly string[]): `0x${string}` | un
  * consumers can resolve "who can create proposals" without re-walking the
  * full permissions blob.
  */
-export function findProposalConditionAddress(
-  raw: ReadonlyArray<readonly [bigint | number, string, string, string, string]> | undefined,
-): string | undefined {
+export function findProposalConditionAddress(raw: readonly RawPermission[] | undefined): string | undefined {
   if (!raw) return undefined;
-  for (const [, , , condition, permissionId] of raw) {
+  for (const p of raw) {
+    const condition = p[3];
+    const permissionId = p[4];
     if (permissionId === CREATE_PROPOSAL_PERMISSION_ID && condition && condition !== ZERO_ADDRESS) {
       return getAddress(condition);
     }

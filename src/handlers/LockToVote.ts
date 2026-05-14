@@ -1,4 +1,4 @@
-import { LockToVote } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { fetchEscrowSettings } from "../effects/escrowSettings";
 import { fetchTokenTotalSupplyAtBlock } from "../effects/token";
@@ -8,7 +8,7 @@ import { createProposal, executeProposal } from "../services/proposal";
 import { clearVote, recordVote } from "../services/vote";
 import { pluginId, settingId } from "../utils/ids";
 
-LockToVote.LockToVoteVoteCast.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "LockToVote", event: "LockToVoteVoteCast" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -36,7 +36,7 @@ LockToVote.LockToVoteVoteCast.handler(async ({ event, context }) => {
   });
 });
 
-LockToVote.VoteCleared.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "LockToVote", event: "VoteCleared" }, async ({ event, context }) =>
   clearVote(context, {
     chainId: event.chainId,
     pluginAddress: getAddress(event.srcAddress),
@@ -48,7 +48,7 @@ LockToVote.VoteCleared.handler(async ({ event, context }) =>
   }),
 );
 
-LockToVote.LockToVoteProposalCreated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "LockToVote", event: "LockToVoteProposalCreated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -94,7 +94,7 @@ LockToVote.LockToVoteProposalCreated.handler(async ({ event, context }) => {
   });
 });
 
-LockToVote.LockToVoteProposalExecuted.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "LockToVote", event: "LockToVoteProposalExecuted" }, async ({ event, context }) =>
   executeProposal(context, {
     chainId: event.chainId,
     pluginAddress: getAddress(event.srcAddress),
@@ -105,7 +105,7 @@ LockToVote.LockToVoteProposalExecuted.handler(async ({ event, context }) =>
   }),
 );
 
-LockToVote.LockToVoteSettingsUpdated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "LockToVote", event: "LockToVoteSettingsUpdated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -158,7 +158,7 @@ LockToVote.LockToVoteSettingsUpdated.handler(async ({ event, context }) => {
   });
 });
 
-LockToVote.LockToVoteMetadataSet.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "LockToVote", event: "LockToVoteMetadataSet" }, async ({ event, context }) => {
   await applyPluginMetadata(context, {
     chainId: event.chainId,
     pluginAddress: event.srcAddress,

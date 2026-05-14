@@ -1,4 +1,4 @@
-import type { HandlerContext } from "generated";
+import type { EvmOnEventContext as HandlerContext } from "envio";
 import { ZERO_ADDRESS } from "../constants";
 import { fetchEnsForAddress } from "../effects/ens";
 import logger from "../helpers/logger";

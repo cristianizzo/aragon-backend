@@ -1,5 +1,4 @@
-import type { HandlerContext } from "generated";
-import { GaugeVoter } from "generated";
+import { type EvmOnEventContext, indexer } from "envio";
 import { getAddress } from "viem";
 import { fetchIpfsJson } from "../effects/ipfs";
 import { GaugeStatus, GaugeVoteKind } from "../enums";
@@ -28,7 +27,7 @@ function extractCidFromString(uri: string | undefined): string | undefined {
  * Returns null on missing CID / fetch failure / parse failure.
  */
 async function loadGaugeMetadata(
-  context: HandlerContext,
+  context: EvmOnEventContext,
   metadataURI: string | undefined,
 ): Promise<{ name?: string; description?: string; links?: unknown[]; avatar?: string } | null> {
   const cid = extractCidFromString(metadataURI);
@@ -37,7 +36,7 @@ async function loadGaugeMetadata(
   return parseDaoMetadata(raw);
 }
 
-GaugeVoter.GaugeCreated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeCreated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const gaugeAddress = getAddress(event.params.gauge);
@@ -63,7 +62,7 @@ GaugeVoter.GaugeCreated.handler(async ({ event, context }) => {
   await addMember(context, { address: creatorAddress, blockNumber: event.block.number });
 });
 
-GaugeVoter.GaugeActivated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeActivated" }, async ({ event, context }) => {
   const id = gaugeId(event.chainId, event.params.gauge);
   const gauge = await context.Gauge.get(id);
   if (gauge) {
@@ -71,7 +70,7 @@ GaugeVoter.GaugeActivated.handler(async ({ event, context }) => {
   }
 });
 
-GaugeVoter.GaugeDeactivated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeDeactivated" }, async ({ event, context }) => {
   const id = gaugeId(event.chainId, event.params.gauge);
   const gauge = await context.Gauge.get(id);
   if (gauge) {
@@ -79,7 +78,7 @@ GaugeVoter.GaugeDeactivated.handler(async ({ event, context }) => {
   }
 });
 
-GaugeVoter.GaugeMetadataUpdated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeMetadataUpdated" }, async ({ event, context }) => {
   const id = gaugeId(event.chainId, event.params.gauge);
   const gauge = await context.Gauge.get(id);
   if (!gauge) return;
@@ -95,7 +94,7 @@ GaugeVoter.GaugeMetadataUpdated.handler(async ({ event, context }) => {
   });
 });
 
-GaugeVoter.Voted.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "GaugeVoter", event: "Voted" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const gaugeAddress = getAddress(event.params.gauge);
@@ -167,7 +166,7 @@ GaugeVoter.Voted.handler(async ({ event, context }) => {
   await addMember(context, { address: voterAddress, blockNumber: event.block.number });
 });
 
-GaugeVoter.Reset.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "GaugeVoter", event: "Reset" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const gaugeAddress = getAddress(event.params.gauge);
@@ -220,7 +219,7 @@ GaugeVoter.Reset.handler(async ({ event, context }) => {
   await addMember(context, { address: voterAddress, blockNumber: event.block.number });
 });
 
-GaugeVoter.GaugeVoterMetadataSet.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeVoterMetadataSet" }, async ({ event, context }) => {
   await applyPluginMetadata(context, {
     chainId: event.chainId,
     pluginAddress: event.srcAddress,
@@ -239,7 +238,7 @@ GaugeVoter.GaugeVoterMetadataSet.handler(async ({ event, context }) => {
  * state. Clamped at 0 to be defensive against double-resets.
  */
 async function bumpGaugeMetrics(
-  context: HandlerContext,
+  context: EvmOnEventContext,
   args: {
     chainId: number;
     pluginAddress: string;

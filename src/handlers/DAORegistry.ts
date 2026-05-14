@@ -1,4 +1,4 @@
-import { DAORegistry } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { fetchDaoVersion, fetchImplementationAddress } from "../effects/dao";
 import logger from "../helpers/logger";
@@ -13,11 +13,11 @@ const llo = logger.logMeta.bind(null, { service: "handlers:DAORegistry" });
 // pre-handler phase: no async, no DB writes, only address registration so
 // subsequent DAO events (MetadataSet, Granted, ...) get routed to our DAO
 // handlers from this block forward.
-DAORegistry.DAORegistered.contractRegister(({ event, context }) => {
-  context.addDAO(event.params.dao);
+indexer.contractRegister({ contract: "DAORegistry", event: "DAORegistered" }, async ({ event, context }) => {
+  context.chain.DAO.add(event.params.dao);
 });
 
-DAORegistry.DAORegistered.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "DAORegistry", event: "DAORegistered" }, async ({ event, context }) => {
   const { chainId } = event;
   const daoAddress = getAddress(event.params.dao);
   const creatorAddress = getAddress(event.params.creator);

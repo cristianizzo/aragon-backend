@@ -1,4 +1,4 @@
-import { StagedProposalProcessor } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { PluginInterfaceType } from "../enums";
 import { applyPluginMetadata } from "../services/pluginMetadata";
@@ -11,7 +11,7 @@ import {
 } from "../services/sppStages";
 import { pluginId } from "../utils/ids";
 
-StagedProposalProcessor.ProposalResultReported.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "StagedProposalProcessor", event: "ProposalResultReported" }, async ({ event, context }) =>
   applyProposalResultReported(context, {
     chainId: event.chainId,
     pluginAddress: event.srcAddress,
@@ -23,7 +23,7 @@ StagedProposalProcessor.ProposalResultReported.handler(async ({ event, context }
   }),
 );
 
-StagedProposalProcessor.ProposalCanceled.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "StagedProposalProcessor", event: "ProposalCanceled" }, async ({ event, context }) =>
   cancelProposal(context, {
     chainId: event.chainId,
     pluginAddress: getAddress(event.srcAddress),
@@ -34,7 +34,7 @@ StagedProposalProcessor.ProposalCanceled.handler(async ({ event, context }) =>
   }),
 );
 
-StagedProposalProcessor.ProposalEdited.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "StagedProposalProcessor", event: "ProposalEdited" }, async ({ event, context }) =>
   editProposal(context, {
     chainId: event.chainId,
     pluginAddress: getAddress(event.srcAddress),
@@ -46,7 +46,7 @@ StagedProposalProcessor.ProposalEdited.handler(async ({ event, context }) =>
   }),
 );
 
-StagedProposalProcessor.ProposalAdvanced.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "StagedProposalProcessor", event: "ProposalAdvanced" }, async ({ event, context }) =>
   applyProposalAdvanced(context, {
     chainId: event.chainId,
     pluginAddress: event.srcAddress,
@@ -58,7 +58,7 @@ StagedProposalProcessor.ProposalAdvanced.handler(async ({ event, context }) =>
   }),
 );
 
-StagedProposalProcessor.SPPProposalCreated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "StagedProposalProcessor", event: "SPPProposalCreated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -92,7 +92,7 @@ StagedProposalProcessor.SPPProposalCreated.handler(async ({ event, context }) =>
   });
 });
 
-StagedProposalProcessor.SPPProposalExecuted.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "StagedProposalProcessor", event: "SPPProposalExecuted" }, async ({ event, context }) =>
   executeProposal(context, {
     chainId: event.chainId,
     pluginAddress: getAddress(event.srcAddress),
@@ -103,7 +103,7 @@ StagedProposalProcessor.SPPProposalExecuted.handler(async ({ event, context }) =
   }),
 );
 
-StagedProposalProcessor.SPPMetadataSet.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "StagedProposalProcessor", event: "SPPMetadataSet" }, async ({ event, context }) => {
   await applyPluginMetadata(context, {
     chainId: event.chainId,
     pluginAddress: event.srcAddress,
@@ -115,7 +115,7 @@ StagedProposalProcessor.SPPMetadataSet.handler(async ({ event, context }) => {
   });
 });
 
-StagedProposalProcessor.StagesUpdated.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "StagedProposalProcessor", event: "StagesUpdated" }, async ({ event, context }) =>
   applyStagesUpdated(context, {
     chainId: event.chainId,
     pluginAddress: event.srcAddress,
@@ -126,7 +126,7 @@ StagedProposalProcessor.StagesUpdated.handler(async ({ event, context }) =>
   }),
 );
 
-StagedProposalProcessor.SubProposalCreated.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "StagedProposalProcessor", event: "SubProposalCreated" }, async ({ event, context }) =>
   applySubProposalCreated(context, {
     chainId: event.chainId,
     parentPluginAddress: event.srcAddress,

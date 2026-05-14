@@ -4,6 +4,7 @@ node_modules/
 
 # Generated (regenerated via pnpm codegen)
 generated/
+.envio/
 
 # Environment
 .env

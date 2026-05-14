@@ -1,8 +1,8 @@
-import { ExitQueue } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { addMember } from "../services/member";
 
-ExitQueue.ExitQueued.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "ExitQueue", event: "ExitQueued" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const tokenId = event.params.tokenId.toString();
   const holder = getAddress(event.params.holder);
@@ -35,7 +35,7 @@ ExitQueue.ExitQueued.handler(async ({ event, context }) => {
   await addMember(context, { address: holder, blockNumber: event.block.number });
 });
 
-ExitQueue.ExitQueuedV2.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "ExitQueue", event: "ExitQueuedV2" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const tokenId = event.params.tokenId.toString();
   const holder = getAddress(event.params.holder);
@@ -63,7 +63,7 @@ ExitQueue.ExitQueuedV2.handler(async ({ event, context }) => {
   await addMember(context, { address: holder, blockNumber: event.block.number });
 });
 
-ExitQueue.ExitCancelled.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "ExitQueue", event: "ExitCancelled" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const tokenId = event.params.tokenId.toString();
 
@@ -83,10 +83,10 @@ ExitQueue.ExitCancelled.handler(async ({ event, context }) => {
   await addMember(context, { address: getAddress(event.params.holder), blockNumber: event.block.number });
 });
 
-ExitQueue.MinLockSet.handler(async () => {
+indexer.onEvent({ contract: "ExitQueue", event: "MinLockSet" }, async () => {
   // Placeholder — informational, no entity update needed yet.
 });
 
-ExitQueue.ExitFeePercentAdjusted.handler(async () => {
+indexer.onEvent({ contract: "ExitQueue", event: "ExitFeePercentAdjusted" }, async () => {
   // Placeholder — informational, no entity update needed yet.
 });

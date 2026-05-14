@@ -1,9 +1,9 @@
-import { LockManager } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { addMember } from "../services/member";
 import { lockToVoteMemberId } from "../utils/ids";
 
-LockManager.BalanceLocked.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "LockManager", event: "BalanceLocked" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const lockManagerAddress = getAddress(event.srcAddress);
   const memberAddress = getAddress(event.params.voter);
@@ -23,7 +23,7 @@ LockManager.BalanceLocked.handler(async ({ event, context }) => {
   await addMember(context, { address: memberAddress, blockNumber: event.block.number });
 });
 
-LockManager.BalanceUnlocked.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "LockManager", event: "BalanceUnlocked" }, async ({ event, context }) => {
   const memberAddress = getAddress(event.params.voter);
   const id = lockToVoteMemberId(event.chainId, event.srcAddress, memberAddress);
   const existing = await context.LockToVoteMember.get(id);

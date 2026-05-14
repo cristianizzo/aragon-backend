@@ -1,4 +1,4 @@
-import { DAO, type HandlerContext } from "generated";
+import { type EvmOnEventContext, indexer } from "envio";
 import { getAddress } from "viem";
 import { NATIVE_AS_ERC20_CHAINS, ZERO_ADDRESS } from "../constants";
 import { TransactionSide, TransactionType } from "../enums";
@@ -13,7 +13,7 @@ import { recordTransaction } from "../services/transaction";
  * entity each handler operates on, not by the event source.
  */
 
-DAO.MetadataSet.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "DAO", event: "MetadataSet" }, async ({ event, context }) =>
   applyDaoMetadata(context, {
     chainId: event.chainId,
     daoAddress: event.srcAddress,
@@ -25,7 +25,7 @@ DAO.MetadataSet.handler(async ({ event, context }) =>
   }),
 );
 
-DAO.Upgraded.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "DAO", event: "Upgraded" }, async ({ event, context }) =>
   applyDaoUpgrade(context, {
     chainId: event.chainId,
     daoAddress: event.srcAddress,
@@ -34,7 +34,7 @@ DAO.Upgraded.handler(async ({ event, context }) =>
   }),
 );
 
-DAO.NativeTokenDeposited.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "DAO", event: "NativeTokenDeposited" }, async ({ event, context }) => {
   if (NATIVE_AS_ERC20_CHAINS.has(event.chainId)) return;
   const amount = event.params.amount;
   if (amount === 0n) return;
@@ -81,11 +81,11 @@ DAO.NativeTokenDeposited.handler(async ({ event, context }) => {
  * for both signatures funnel into this helper.
  */
 async function recordNativeWithdraws(
-  context: HandlerContext,
+  context: EvmOnEventContext,
   args: {
     chainId: number;
     srcAddress: string;
-    actions: ReadonlyArray<readonly [string, bigint, string]>;
+    actions: ReadonlyArray<{ readonly 0: string; readonly 1: bigint; readonly 2: string }>;
     blockNumber: number;
     blockTimestamp: number;
     transactionHash: string;
@@ -114,7 +114,8 @@ async function recordNativeWithdraws(
   for (let actionIndex = 0; actionIndex < args.actions.length; actionIndex++) {
     const action = args.actions[actionIndex];
     if (!action) continue;
-    const [to, value] = action;
+    const to = action[0];
+    const value = action[1];
     if (value === 0n) continue;
 
     recordTransaction(context, {
@@ -136,7 +137,7 @@ async function recordNativeWithdraws(
   }
 }
 
-DAO.Executed.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "DAO", event: "Executed" }, async ({ event, context }) =>
   recordNativeWithdraws(context, {
     chainId: event.chainId,
     srcAddress: event.srcAddress,
@@ -149,7 +150,7 @@ DAO.Executed.handler(async ({ event, context }) =>
   }),
 );
 
-DAO.ExecutedV2.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "DAO", event: "ExecutedV2" }, async ({ event, context }) =>
   recordNativeWithdraws(context, {
     chainId: event.chainId,
     srcAddress: event.srcAddress,
