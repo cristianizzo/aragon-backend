@@ -4,13 +4,12 @@ import { TransactionSide, TransactionType } from "../enums";
 import { updateDaoAssets } from "../services/asset";
 import { addToken } from "../services/token";
 import { recordTransaction } from "../services/transaction";
-import { daoId } from "../utils/ids";
+import { getDaoSet } from "../utils/daoRegistry";
 
 // Wildcard subscription: every ERC-20 `Transfer` on every contract on every
-// configured chain hits this handler. We filter at handler-time on
-// `context.Dao.get(from)` / `context.Dao.get(to)` — Envio's recommended
-// pattern for "thousands of addresses to watch":
-//   https://docs.envio.dev/docs/HyperIndex/wildcard-indexing#assert-erc20-transfers-in-handler
+// configured chain hits this handler. The DAO-membership check filters out
+// the 99.99% of events that don't touch a DAO via the in-memory address
+// registry (`getDaoSet`) — no per-event `context.Dao.get()` round-trip.
 //
 // When a transfer goes from one DAO to another (rare but valid), TWO rows
 // are written — one withdraw perspective for the sender, one deposit
@@ -24,10 +23,9 @@ indexer.onEvent({ contract: "ERC20", event: "Transfer", wildcard: true }, async 
   const fromAddress = getAddress(event.params.from);
   const toAddress = getAddress(event.params.to);
 
-  const [fromDao, toDao] = await Promise.all([
-    context.Dao.get(daoId(chainId, fromAddress)),
-    context.Dao.get(daoId(chainId, toAddress)),
-  ]);
+  const daos = getDaoSet(chainId);
+  const fromDao = daos.has(fromAddress);
+  const toDao = daos.has(toAddress);
   if (!fromDao && !toDao) return;
 
   const tokenAddress = getAddress(event.srcAddress);
