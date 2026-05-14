@@ -116,180 +116,162 @@ indexer.contractRegister(
 // Handlers — thin orchestration over services/pluginInstall
 // =============================================
 
-indexer.onEvent(
-  { contract: "PluginSetupProcessor", event: "InstallationPrepared" },
-  async ({ event, context }) => {
-    const chainId = event.chainId;
-    const daoAddress = getAddress(event.params.dao);
-    const pluginAddress = getAddress(event.params.plugin);
+indexer.onEvent({ contract: "PluginSetupProcessor", event: "InstallationPrepared" }, async ({ event, context }) => {
+  const chainId = event.chainId;
+  const daoAddress = getAddress(event.params.dao);
+  const pluginAddress = getAddress(event.params.plugin);
 
-    // Skip if DAO doesn't exist — preserves legacy behaviour of not logging
-    // setup events for unknown DAOs.
-    const dao = await context.Dao.get(daoId(chainId, daoAddress));
-    if (!dao) return;
+  // Skip if DAO doesn't exist — preserves legacy behaviour of not logging
+  // setup events for unknown DAOs.
+  const dao = await context.Dao.get(daoId(chainId, daoAddress));
+  if (!dao) return;
 
-    const permissions = parsePermissions(event.params.preparedSetupData[1]);
-    const release = Number(event.params.versionTag[0]);
-    const build = Number(event.params.versionTag[1]);
+  const permissions = parsePermissions(event.params.preparedSetupData[1]);
+  const release = Number(event.params.versionTag[0]);
+  const build = Number(event.params.versionTag[1]);
 
-    logPluginSetupPrepared(context, {
-      chainId,
-      event: PluginSetupEvent.InstallationPrepared,
-      blockNumber: event.block.number,
-      transactionHash: event.transaction.hash,
-      logIndex: event.logIndex,
-      daoAddress,
-      pluginAddress,
-      preparedSetupId: event.params.preparedSetupId,
-      pluginSetupRepo: getAddress(event.params.pluginSetupRepo),
-      sender: getAddress(event.params.sender),
-      release,
-      build,
-      permissions,
-    });
+  logPluginSetupPrepared(context, {
+    chainId,
+    event: PluginSetupEvent.InstallationPrepared,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+    daoAddress,
+    pluginAddress,
+    preparedSetupId: event.params.preparedSetupId,
+    pluginSetupRepo: getAddress(event.params.pluginSetupRepo),
+    sender: getAddress(event.params.sender),
+    release,
+    build,
+    permissions,
+  });
 
-    await stubPluginOnInstallPrepared(context, {
-      chainId,
-      daoAddress,
-      pluginAddress,
-      pluginSetupRepo: event.params.pluginSetupRepo,
-      helpers: event.params.preparedSetupData[0],
-      release,
-      build,
-      permissions,
-      rawPermissions: event.params.preparedSetupData[1],
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
-    });
-  },
-);
+  await stubPluginOnInstallPrepared(context, {
+    chainId,
+    daoAddress,
+    pluginAddress,
+    pluginSetupRepo: event.params.pluginSetupRepo,
+    helpers: event.params.preparedSetupData[0],
+    release,
+    build,
+    permissions,
+    rawPermissions: event.params.preparedSetupData[1],
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+  });
+});
 
-indexer.onEvent(
-  { contract: "PluginSetupProcessor", event: "InstallationApplied" },
-  async ({ event, context }) => {
-    const chainId = event.chainId;
-    const daoAddress = getAddress(event.params.dao);
-    const pluginAddress = getAddress(event.params.plugin);
+indexer.onEvent({ contract: "PluginSetupProcessor", event: "InstallationApplied" }, async ({ event, context }) => {
+  const chainId = event.chainId;
+  const daoAddress = getAddress(event.params.dao);
+  const pluginAddress = getAddress(event.params.plugin);
 
-    const dao = await context.Dao.get(daoId(chainId, daoAddress));
-    if (!dao) return;
+  const dao = await context.Dao.get(daoId(chainId, daoAddress));
+  if (!dao) return;
 
-    logPluginSetupApplied(context, {
-      chainId,
-      event: PluginSetupEvent.InstallationApplied,
-      blockNumber: event.block.number,
-      transactionHash: event.transaction.hash,
-      logIndex: event.logIndex,
-      daoAddress,
-      pluginAddress,
-      preparedSetupId: event.params.preparedSetupId,
-      appliedSetupId: event.params.appliedSetupId,
-    });
+  logPluginSetupApplied(context, {
+    chainId,
+    event: PluginSetupEvent.InstallationApplied,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+    daoAddress,
+    pluginAddress,
+    preparedSetupId: event.params.preparedSetupId,
+    appliedSetupId: event.params.appliedSetupId,
+  });
 
-    await setPluginStatus(context, {
-      chainId,
-      pluginAddress,
-      status: PluginStatus.Installed,
-      blockNumber: event.block.number,
-    });
-  },
-);
+  await setPluginStatus(context, {
+    chainId,
+    pluginAddress,
+    status: PluginStatus.Installed,
+    blockNumber: event.block.number,
+  });
+});
 
-indexer.onEvent(
-  { contract: "PluginSetupProcessor", event: "UpdatePrepared" },
-  async ({ event, context }) => {
-    logPluginSetupPrepared(context, {
-      chainId: event.chainId,
-      event: PluginSetupEvent.UpdatePrepared,
-      blockNumber: event.block.number,
-      transactionHash: event.transaction.hash,
-      logIndex: event.logIndex,
-      daoAddress: getAddress(event.params.dao),
-      pluginAddress: getAddress(event.params.setupPayload[0]),
-      preparedSetupId: event.params.preparedSetupId,
-      pluginSetupRepo: getAddress(event.params.pluginSetupRepo),
-      sender: getAddress(event.params.sender),
-      release: Number(event.params.versionTag[0]),
-      build: Number(event.params.versionTag[1]),
-      permissions: parsePermissions(event.params.preparedSetupData[1]),
-    });
-  },
-);
+indexer.onEvent({ contract: "PluginSetupProcessor", event: "UpdatePrepared" }, async ({ event, context }) => {
+  logPluginSetupPrepared(context, {
+    chainId: event.chainId,
+    event: PluginSetupEvent.UpdatePrepared,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+    daoAddress: getAddress(event.params.dao),
+    pluginAddress: getAddress(event.params.setupPayload[0]),
+    preparedSetupId: event.params.preparedSetupId,
+    pluginSetupRepo: getAddress(event.params.pluginSetupRepo),
+    sender: getAddress(event.params.sender),
+    release: Number(event.params.versionTag[0]),
+    build: Number(event.params.versionTag[1]),
+    permissions: parsePermissions(event.params.preparedSetupData[1]),
+  });
+});
 
-indexer.onEvent(
-  { contract: "PluginSetupProcessor", event: "UpdateApplied" },
-  async ({ event, context }) => {
-    const chainId = event.chainId;
-    const pluginAddress = getAddress(event.params.plugin);
+indexer.onEvent({ contract: "PluginSetupProcessor", event: "UpdateApplied" }, async ({ event, context }) => {
+  const chainId = event.chainId;
+  const pluginAddress = getAddress(event.params.plugin);
 
-    logPluginSetupApplied(context, {
-      chainId,
-      event: PluginSetupEvent.UpdateApplied,
-      blockNumber: event.block.number,
-      transactionHash: event.transaction.hash,
-      logIndex: event.logIndex,
-      daoAddress: getAddress(event.params.dao),
-      pluginAddress,
-      preparedSetupId: event.params.preparedSetupId,
-      appliedSetupId: event.params.appliedSetupId,
-    });
+  logPluginSetupApplied(context, {
+    chainId,
+    event: PluginSetupEvent.UpdateApplied,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+    daoAddress: getAddress(event.params.dao),
+    pluginAddress,
+    preparedSetupId: event.params.preparedSetupId,
+    appliedSetupId: event.params.appliedSetupId,
+  });
 
-    await setPluginStatus(context, {
-      chainId,
-      pluginAddress,
-      status: PluginStatus.Updated,
-      blockNumber: event.block.number,
-    });
-  },
-);
+  await setPluginStatus(context, {
+    chainId,
+    pluginAddress,
+    status: PluginStatus.Updated,
+    blockNumber: event.block.number,
+  });
+});
 
-indexer.onEvent(
-  { contract: "PluginSetupProcessor", event: "UninstallationPrepared" },
-  async ({ event, context }) => {
-    logPluginSetupPrepared(context, {
-      chainId: event.chainId,
-      event: PluginSetupEvent.UninstallationPrepared,
-      blockNumber: event.block.number,
-      transactionHash: event.transaction.hash,
-      logIndex: event.logIndex,
-      daoAddress: getAddress(event.params.dao),
-      pluginAddress: getAddress(event.params.setupPayload[0]),
-      preparedSetupId: event.params.preparedSetupId,
-      pluginSetupRepo: getAddress(event.params.pluginSetupRepo),
-      sender: getAddress(event.params.sender),
-      release: Number(event.params.versionTag[0]),
-      build: Number(event.params.versionTag[1]),
-      // For UninstallationPrepared the permissions array is top-level on the
-      // event (not nested under a preparedSetupData struct).
-      permissions: parsePermissions(event.params.permissions),
-    });
-  },
-);
+indexer.onEvent({ contract: "PluginSetupProcessor", event: "UninstallationPrepared" }, async ({ event, context }) => {
+  logPluginSetupPrepared(context, {
+    chainId: event.chainId,
+    event: PluginSetupEvent.UninstallationPrepared,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+    daoAddress: getAddress(event.params.dao),
+    pluginAddress: getAddress(event.params.setupPayload[0]),
+    preparedSetupId: event.params.preparedSetupId,
+    pluginSetupRepo: getAddress(event.params.pluginSetupRepo),
+    sender: getAddress(event.params.sender),
+    release: Number(event.params.versionTag[0]),
+    build: Number(event.params.versionTag[1]),
+    // For UninstallationPrepared the permissions array is top-level on the
+    // event (not nested under a preparedSetupData struct).
+    permissions: parsePermissions(event.params.permissions),
+  });
+});
 
-indexer.onEvent(
-  { contract: "PluginSetupProcessor", event: "UninstallationApplied" },
-  async ({ event, context }) => {
-    const chainId = event.chainId;
-    const pluginAddress = getAddress(event.params.plugin);
+indexer.onEvent({ contract: "PluginSetupProcessor", event: "UninstallationApplied" }, async ({ event, context }) => {
+  const chainId = event.chainId;
+  const pluginAddress = getAddress(event.params.plugin);
 
-    logPluginSetupApplied(context, {
-      chainId,
-      event: PluginSetupEvent.UninstallationApplied,
-      blockNumber: event.block.number,
-      transactionHash: event.transaction.hash,
-      logIndex: event.logIndex,
-      daoAddress: getAddress(event.params.dao),
-      pluginAddress,
-      preparedSetupId: event.params.preparedSetupId,
-      // OSx `UninstallationApplied` event has no `appliedSetupId` field.
-    });
+  logPluginSetupApplied(context, {
+    chainId,
+    event: PluginSetupEvent.UninstallationApplied,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+    daoAddress: getAddress(event.params.dao),
+    pluginAddress,
+    preparedSetupId: event.params.preparedSetupId,
+    // OSx `UninstallationApplied` event has no `appliedSetupId` field.
+  });
 
-    await setPluginStatus(context, {
-      chainId,
-      pluginAddress,
-      status: PluginStatus.Uninstalled,
-      blockNumber: event.block.number,
-    });
-  },
-);
+  await setPluginStatus(context, {
+    chainId,
+    pluginAddress,
+    status: PluginStatus.Uninstalled,
+    blockNumber: event.block.number,
+  });
+});

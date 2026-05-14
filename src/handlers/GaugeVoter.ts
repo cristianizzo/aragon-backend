@@ -36,221 +36,200 @@ async function loadGaugeMetadata(
   return parseDaoMetadata(raw);
 }
 
-indexer.onEvent(
-  { contract: "GaugeVoter", event: "GaugeCreated" },
-  async ({ event, context }) => {
-    const chainId = event.chainId;
-    const pluginAddress = getAddress(event.srcAddress);
-    const gaugeAddress = getAddress(event.params.gauge);
-    const creatorAddress = getAddress(event.params.creator);
-    const metadata = await loadGaugeMetadata(context, event.params.metadataURI);
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeCreated" }, async ({ event, context }) => {
+  const chainId = event.chainId;
+  const pluginAddress = getAddress(event.srcAddress);
+  const gaugeAddress = getAddress(event.params.gauge);
+  const creatorAddress = getAddress(event.params.creator);
+  const metadata = await loadGaugeMetadata(context, event.params.metadataURI);
 
-    context.Gauge.set({
-      id: gaugeId(chainId, gaugeAddress),
-      chainId,
-      address: gaugeAddress,
-      pluginAddress,
-      creatorAddress,
-      metadataUri: event.params.metadataURI || undefined,
-      name: metadata?.name,
-      description: metadata?.description,
-      links: metadata?.links,
-      avatar: metadata?.avatar,
-      status: GaugeStatus.Active,
-      blockNumber: event.block.number,
-      transactionHash: event.transaction.hash,
-    });
+  context.Gauge.set({
+    id: gaugeId(chainId, gaugeAddress),
+    chainId,
+    address: gaugeAddress,
+    pluginAddress,
+    creatorAddress,
+    metadataUri: event.params.metadataURI || undefined,
+    name: metadata?.name,
+    description: metadata?.description,
+    links: metadata?.links,
+    avatar: metadata?.avatar,
+    status: GaugeStatus.Active,
+    blockNumber: event.block.number,
+    transactionHash: event.transaction.hash,
+  });
 
-    await addMember(context, { address: creatorAddress, blockNumber: event.block.number });
-  },
-);
+  await addMember(context, { address: creatorAddress, blockNumber: event.block.number });
+});
 
-indexer.onEvent(
-  { contract: "GaugeVoter", event: "GaugeActivated" },
-  async ({ event, context }) => {
-    const id = gaugeId(event.chainId, event.params.gauge);
-    const gauge = await context.Gauge.get(id);
-    if (gauge) {
-      context.Gauge.set({ ...gauge, status: GaugeStatus.Active });
-    }
-  },
-);
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeActivated" }, async ({ event, context }) => {
+  const id = gaugeId(event.chainId, event.params.gauge);
+  const gauge = await context.Gauge.get(id);
+  if (gauge) {
+    context.Gauge.set({ ...gauge, status: GaugeStatus.Active });
+  }
+});
 
-indexer.onEvent(
-  { contract: "GaugeVoter", event: "GaugeDeactivated" },
-  async ({ event, context }) => {
-    const id = gaugeId(event.chainId, event.params.gauge);
-    const gauge = await context.Gauge.get(id);
-    if (gauge) {
-      context.Gauge.set({ ...gauge, status: GaugeStatus.Deactivated });
-    }
-  },
-);
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeDeactivated" }, async ({ event, context }) => {
+  const id = gaugeId(event.chainId, event.params.gauge);
+  const gauge = await context.Gauge.get(id);
+  if (gauge) {
+    context.Gauge.set({ ...gauge, status: GaugeStatus.Deactivated });
+  }
+});
 
-indexer.onEvent(
-  { contract: "GaugeVoter", event: "GaugeMetadataUpdated" },
-  async ({ event, context }) => {
-    const id = gaugeId(event.chainId, event.params.gauge);
-    const gauge = await context.Gauge.get(id);
-    if (!gauge) return;
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeMetadataUpdated" }, async ({ event, context }) => {
+  const id = gaugeId(event.chainId, event.params.gauge);
+  const gauge = await context.Gauge.get(id);
+  if (!gauge) return;
 
-    const metadata = await loadGaugeMetadata(context, event.params.metadataURI);
-    context.Gauge.set({
-      ...gauge,
-      metadataUri: event.params.metadataURI || gauge.metadataUri,
-      name: metadata?.name ?? gauge.name,
-      description: metadata?.description ?? gauge.description,
-      links: metadata?.links ?? gauge.links,
-      avatar: metadata?.avatar ?? gauge.avatar,
-    });
-  },
-);
+  const metadata = await loadGaugeMetadata(context, event.params.metadataURI);
+  context.Gauge.set({
+    ...gauge,
+    metadataUri: event.params.metadataURI || gauge.metadataUri,
+    name: metadata?.name ?? gauge.name,
+    description: metadata?.description ?? gauge.description,
+    links: metadata?.links ?? gauge.links,
+    avatar: metadata?.avatar ?? gauge.avatar,
+  });
+});
 
-indexer.onEvent(
-  { contract: "GaugeVoter", event: "Voted" },
-  async ({ event, context }) => {
-    const chainId = event.chainId;
-    const pluginAddress = getAddress(event.srcAddress);
-    const gaugeAddress = getAddress(event.params.gauge);
-    const voterAddress = getAddress(event.params.voter);
-    const epoch = event.params.epoch.toString();
-    const totalVotingPowerInGauge = event.params.totalVotingPowerInGauge;
-    const totalVotingPowerInContract = event.params.totalVotingPowerInContract;
+indexer.onEvent({ contract: "GaugeVoter", event: "Voted" }, async ({ event, context }) => {
+  const chainId = event.chainId;
+  const pluginAddress = getAddress(event.srcAddress);
+  const gaugeAddress = getAddress(event.params.gauge);
+  const voterAddress = getAddress(event.params.voter);
+  const epoch = event.params.epoch.toString();
+  const totalVotingPowerInGauge = event.params.totalVotingPowerInGauge;
+  const totalVotingPowerInContract = event.params.totalVotingPowerInContract;
 
-    // Canonical row per (gauge, voter, epoch). Voted overwrites — when the
-    // same voter re-votes in the same epoch the row is updated, not appended.
-    const canonical_id = canonicalGaugeVoteId(chainId, gaugeAddress, voterAddress, epoch);
-    const existing = await context.GaugeVote.get(canonical_id);
-    // Append-only audit row keyed by logIndex (mirrors legacy `LogGaugeVote`).
-    // Lets consumers walk every Voted / Reset event in the order they fired.
-    const audit_id = gaugeVoteId(chainId, gaugeAddress, voterAddress, epoch, event.logIndex, GaugeVoteKind.Vote);
+  // Canonical row per (gauge, voter, epoch). Voted overwrites — when the
+  // same voter re-votes in the same epoch the row is updated, not appended.
+  const canonical_id = canonicalGaugeVoteId(chainId, gaugeAddress, voterAddress, epoch);
+  const existing = await context.GaugeVote.get(canonical_id);
+  // Append-only audit row keyed by logIndex (mirrors legacy `LogGaugeVote`).
+  // Lets consumers walk every Voted / Reset event in the order they fired.
+  const audit_id = gaugeVoteId(chainId, gaugeAddress, voterAddress, epoch, event.logIndex, GaugeVoteKind.Vote);
 
-    // First-active-vote semantics: a row that doesn't exist OR is currently
-    // soft-cleared (`resetVoteTransactionHash` set) counts as fresh.
-    const isFirstActiveVote = !existing || existing.resetVoteTransactionHash !== undefined;
+  // First-active-vote semantics: a row that doesn't exist OR is currently
+  // soft-cleared (`resetVoteTransactionHash` set) counts as fresh.
+  const isFirstActiveVote = !existing || existing.resetVoteTransactionHash !== undefined;
 
+  context.GaugeVote.set({
+    id: canonical_id,
+    chainId,
+    pluginAddress,
+    gaugeAddress,
+    voterAddress,
+    epoch,
+    votingPower: event.params.votingPowerCastForGauge,
+    // `persistentVote` defaults to false — the on-chain Voted event doesn't
+    // expose persistence, legacy derives it from the plugin's
+    // `enabledUpdatedVotingPowerHook` setting which we haven't wired through
+    // yet. Once that PluginSetting field is populated, set this from the
+    // active setting at vote time.
+    persistentVote: false,
+    resetVoteTransactionHash: undefined,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+  });
+
+  // Audit copy — identical shape, distinct id so the canonical row can be
+  // overwritten without losing history.
+  context.GaugeVote.set({
+    id: audit_id,
+    chainId,
+    pluginAddress,
+    gaugeAddress,
+    voterAddress,
+    epoch,
+    votingPower: event.params.votingPowerCastForGauge,
+    persistentVote: false,
+    resetVoteTransactionHash: undefined,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+  });
+
+  await bumpGaugeMetrics(context, {
+    chainId,
+    pluginAddress,
+    gaugeAddress,
+    epoch,
+    currentEpochVotingPower: totalVotingPowerInGauge,
+    totalGaugeVotingPower: totalVotingPowerInContract,
+    voterDelta: isFirstActiveVote ? 1 : 0,
+    blockNumber: event.block.number,
+  });
+
+  await addMember(context, { address: voterAddress, blockNumber: event.block.number });
+});
+
+indexer.onEvent({ contract: "GaugeVoter", event: "Reset" }, async ({ event, context }) => {
+  const chainId = event.chainId;
+  const pluginAddress = getAddress(event.srcAddress);
+  const gaugeAddress = getAddress(event.params.gauge);
+  const voterAddress = getAddress(event.params.voter);
+  const epoch = event.params.epoch.toString();
+  const totalVotingPowerInGauge = event.params.totalVotingPowerInGauge;
+  const totalVotingPowerInContract = event.params.totalVotingPowerInContract;
+
+  // Soft-clear: patch the canonical row in place — mirrors `Vote.voteCleared`.
+  // Decrement the member count only when there was actually an active vote.
+  const canonical_id = canonicalGaugeVoteId(chainId, gaugeAddress, voterAddress, epoch);
+  const existing = await context.GaugeVote.get(canonical_id);
+  const hadActiveVote = existing !== undefined && existing.resetVoteTransactionHash === undefined;
+  if (existing) {
     context.GaugeVote.set({
-      id: canonical_id,
-      chainId,
-      pluginAddress,
-      gaugeAddress,
-      voterAddress,
-      epoch,
-      votingPower: event.params.votingPowerCastForGauge,
-      // `persistentVote` defaults to false — the on-chain Voted event doesn't
-      // expose persistence, legacy derives it from the plugin's
-      // `enabledUpdatedVotingPowerHook` setting which we haven't wired through
-      // yet. Once that PluginSetting field is populated, set this from the
-      // active setting at vote time.
-      persistentVote: false,
-      resetVoteTransactionHash: undefined,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
-    });
-
-    // Audit copy — identical shape, distinct id so the canonical row can be
-    // overwritten without losing history.
-    context.GaugeVote.set({
-      id: audit_id,
-      chainId,
-      pluginAddress,
-      gaugeAddress,
-      voterAddress,
-      epoch,
-      votingPower: event.params.votingPowerCastForGauge,
-      persistentVote: false,
-      resetVoteTransactionHash: undefined,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
-    });
-
-    await bumpGaugeMetrics(context, {
-      chainId,
-      pluginAddress,
-      gaugeAddress,
-      epoch,
-      currentEpochVotingPower: totalVotingPowerInGauge,
-      totalGaugeVotingPower: totalVotingPowerInContract,
-      voterDelta: isFirstActiveVote ? 1 : 0,
-      blockNumber: event.block.number,
-    });
-
-    await addMember(context, { address: voterAddress, blockNumber: event.block.number });
-  },
-);
-
-indexer.onEvent(
-  { contract: "GaugeVoter", event: "Reset" },
-  async ({ event, context }) => {
-    const chainId = event.chainId;
-    const pluginAddress = getAddress(event.srcAddress);
-    const gaugeAddress = getAddress(event.params.gauge);
-    const voterAddress = getAddress(event.params.voter);
-    const epoch = event.params.epoch.toString();
-    const totalVotingPowerInGauge = event.params.totalVotingPowerInGauge;
-    const totalVotingPowerInContract = event.params.totalVotingPowerInContract;
-
-    // Soft-clear: patch the canonical row in place — mirrors `Vote.voteCleared`.
-    // Decrement the member count only when there was actually an active vote.
-    const canonical_id = canonicalGaugeVoteId(chainId, gaugeAddress, voterAddress, epoch);
-    const existing = await context.GaugeVote.get(canonical_id);
-    const hadActiveVote = existing !== undefined && existing.resetVoteTransactionHash === undefined;
-    if (existing) {
-      context.GaugeVote.set({
-        ...existing,
-        votingPower: 0n,
-        resetVoteTransactionHash: event.transaction.hash,
-      });
-    }
-
-    // Append the Reset event row for audit. Distinct id (`-reset` suffix +
-    // logIndex) so it doesn't collide with the canonical row above.
-    context.GaugeVote.set({
-      id: gaugeVoteId(chainId, gaugeAddress, voterAddress, epoch, event.logIndex, GaugeVoteKind.Reset),
-      chainId,
-      pluginAddress,
-      gaugeAddress,
-      voterAddress,
-      epoch,
+      ...existing,
       votingPower: 0n,
-      persistentVote: false,
       resetVoteTransactionHash: event.transaction.hash,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
     });
+  }
 
-    await bumpGaugeMetrics(context, {
-      chainId,
-      pluginAddress,
-      gaugeAddress,
-      epoch,
-      currentEpochVotingPower: totalVotingPowerInGauge,
-      totalGaugeVotingPower: totalVotingPowerInContract,
-      voterDelta: hadActiveVote ? -1 : 0,
-      blockNumber: event.block.number,
-    });
+  // Append the Reset event row for audit. Distinct id (`-reset` suffix +
+  // logIndex) so it doesn't collide with the canonical row above.
+  context.GaugeVote.set({
+    id: gaugeVoteId(chainId, gaugeAddress, voterAddress, epoch, event.logIndex, GaugeVoteKind.Reset),
+    chainId,
+    pluginAddress,
+    gaugeAddress,
+    voterAddress,
+    epoch,
+    votingPower: 0n,
+    persistentVote: false,
+    resetVoteTransactionHash: event.transaction.hash,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+  });
 
-    await addMember(context, { address: voterAddress, blockNumber: event.block.number });
-  },
-);
+  await bumpGaugeMetrics(context, {
+    chainId,
+    pluginAddress,
+    gaugeAddress,
+    epoch,
+    currentEpochVotingPower: totalVotingPowerInGauge,
+    totalGaugeVotingPower: totalVotingPowerInContract,
+    voterDelta: hadActiveVote ? -1 : 0,
+    blockNumber: event.block.number,
+  });
 
-indexer.onEvent(
-  { contract: "GaugeVoter", event: "GaugeVoterMetadataSet" },
-  async ({ event, context }) => {
-    await applyPluginMetadata(context, {
-      chainId: event.chainId,
-      pluginAddress: event.srcAddress,
-      metadata: event.params.metadata,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
-      logIndex: event.logIndex,
-    });
-  },
-);
+  await addMember(context, { address: voterAddress, blockNumber: event.block.number });
+});
+
+indexer.onEvent({ contract: "GaugeVoter", event: "GaugeVoterMetadataSet" }, async ({ event, context }) => {
+  await applyPluginMetadata(context, {
+    chainId: event.chainId,
+    pluginAddress: event.srcAddress,
+    metadata: event.params.metadata,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+  });
+});
 
 /**
  * Upsert the GaugeMetrics row for (gauge, epoch). The voting-power totals

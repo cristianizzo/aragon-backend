@@ -24,47 +24,44 @@ async function findCampaignByStrategy(
   return matches.find((c) => c.campaignId === args.campaignId);
 }
 
-indexer.onEvent(
-  { contract: "CampaignAllocationStrategy", event: "MerkleCampaignSet" },
-  async ({ event, context }) => {
-    const chainId = event.chainId;
-    const allocationStrategy = getAddress(event.srcAddress);
-    const campaignId = event.params.campaignId.toString();
-    const merkleRoot = event.params.merkleRoot;
+indexer.onEvent({ contract: "CampaignAllocationStrategy", event: "MerkleCampaignSet" }, async ({ event, context }) => {
+  const chainId = event.chainId;
+  const allocationStrategy = getAddress(event.srcAddress);
+  const campaignId = event.params.campaignId.toString();
+  const merkleRoot = event.params.merkleRoot;
 
-    const campaign = await findCampaignByStrategy(context, { allocationStrategy, campaignId });
-    if (!campaign) {
-      logger.warn(
-        "MerkleCampaignSet received for unknown campaign — skipped",
-        llo({ allocationStrategy, campaignId, transactionHash: event.transaction.hash }),
-      );
-      return;
-    }
+  const campaign = await findCampaignByStrategy(context, { allocationStrategy, campaignId });
+  if (!campaign) {
+    logger.warn(
+      "MerkleCampaignSet received for unknown campaign — skipped",
+      llo({ allocationStrategy, campaignId, transactionHash: event.transaction.hash }),
+    );
+    return;
+  }
 
-    context.Campaign.set({ ...campaign, merkleRoot });
+  context.Campaign.set({ ...campaign, merkleRoot });
 
-    // Audit trail mirroring legacy `CampaignMerkleRoot` collection — preserves
-    // every set/update so consumers can reconstruct the merkle history.
-    context.CampaignMerkleRootLog.set({
-      id: campaignMerkleRootLogId(chainId, allocationStrategy, campaignId, event.transaction.hash, event.logIndex),
-      chainId,
-      campaign_id: campaign.id,
-      campaignId,
-      pluginAddress: campaign.pluginAddress,
-      allocationStrategy,
-      merkleRoot,
-      previousMerkleRoot: undefined,
-      // `totalMembers` is the leaf count for this root — sourced from
-      // off-chain merkle metadata when present (the event itself doesn't
-      // carry it). Leave null; enrichment can fill in later if needed.
-      totalMembers: undefined,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
-      logIndex: event.logIndex,
-    });
-  },
-);
+  // Audit trail mirroring legacy `CampaignMerkleRoot` collection — preserves
+  // every set/update so consumers can reconstruct the merkle history.
+  context.CampaignMerkleRootLog.set({
+    id: campaignMerkleRootLogId(chainId, allocationStrategy, campaignId, event.transaction.hash, event.logIndex),
+    chainId,
+    campaign_id: campaign.id,
+    campaignId,
+    pluginAddress: campaign.pluginAddress,
+    allocationStrategy,
+    merkleRoot,
+    previousMerkleRoot: undefined,
+    // `totalMembers` is the leaf count for this root — sourced from
+    // off-chain merkle metadata when present (the event itself doesn't
+    // carry it). Leave null; enrichment can fill in later if needed.
+    totalMembers: undefined,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+    logIndex: event.logIndex,
+  });
+});
 
 indexer.onEvent(
   { contract: "CampaignAllocationStrategy", event: "MerkleCampaignUpdated" },

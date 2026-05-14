@@ -16,59 +16,56 @@ import { daoId } from "../utils/ids";
 // always move a single NFT. The actual NFT id is on `Transaction.tokenId`.
 // `Asset.amount` accumulates the NFT count: deposits add 1, withdrawals
 // subtract 1.
-indexer.onEvent(
-  { contract: "ERC721", event: "Transfer", wildcard: true },
-  async ({ event, context }) => {
-    const { chainId } = event;
-    const fromAddress = getAddress(event.params.from);
-    const toAddress = getAddress(event.params.to);
+indexer.onEvent({ contract: "ERC721", event: "Transfer", wildcard: true }, async ({ event, context }) => {
+  const { chainId } = event;
+  const fromAddress = getAddress(event.params.from);
+  const toAddress = getAddress(event.params.to);
 
-    const [fromDao, toDao] = await Promise.all([
-      context.Dao.get(daoId(chainId, fromAddress)),
-      context.Dao.get(daoId(chainId, toAddress)),
-    ]);
-    if (!fromDao && !toDao) return;
+  const [fromDao, toDao] = await Promise.all([
+    context.Dao.get(daoId(chainId, fromAddress)),
+    context.Dao.get(daoId(chainId, toAddress)),
+  ]);
+  if (!fromDao && !toDao) return;
 
-    const tokenAddress = getAddress(event.srcAddress);
-    await addToken(context, {
-      chainId,
-      tokenAddress,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
-    });
+  const tokenAddress = getAddress(event.srcAddress);
+  await addToken(context, {
+    chainId,
+    tokenAddress,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+  });
 
-    const tokenId = event.params.tokenId.toString();
-    const txCommon = {
-      chainId,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-      transactionHash: event.transaction.hash,
-      transactionIndex: event.transaction.transactionIndex,
-      logIndex: event.logIndex,
-      type: TransactionType.Erc721,
-      fromAddress,
-      toAddress,
-      tokenAddress,
-      value: 1n,
-      tokenId,
-    };
-    const assetCommon = {
-      chainId,
-      tokenAddress,
-      amount: 1n,
-      blockNumber: event.block.number,
-      blockTimestamp: event.block.timestamp,
-    };
+  const tokenId = event.params.tokenId.toString();
+  const txCommon = {
+    chainId,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+    transactionHash: event.transaction.hash,
+    transactionIndex: event.transaction.transactionIndex,
+    logIndex: event.logIndex,
+    type: TransactionType.Erc721,
+    fromAddress,
+    toAddress,
+    tokenAddress,
+    value: 1n,
+    tokenId,
+  };
+  const assetCommon = {
+    chainId,
+    tokenAddress,
+    amount: 1n,
+    blockNumber: event.block.number,
+    blockTimestamp: event.block.timestamp,
+  };
 
-    if (toDao) {
-      recordTransaction(context, { ...txCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
-      await updateDaoAssets(context, { ...assetCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
-    }
+  if (toDao) {
+    recordTransaction(context, { ...txCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
+    await updateDaoAssets(context, { ...assetCommon, daoAddress: toAddress, side: TransactionSide.Deposit });
+  }
 
-    if (fromDao) {
-      recordTransaction(context, { ...txCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
-      await updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
-    }
-  },
-);
+  if (fromDao) {
+    recordTransaction(context, { ...txCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
+    await updateDaoAssets(context, { ...assetCommon, daoAddress: fromAddress, side: TransactionSide.Withdraw });
+  }
+});
