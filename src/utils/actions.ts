@@ -1,6 +1,9 @@
 import type { RawAction } from "../helpers/actionDecoder";
 
-type EvmAction = readonly [string, bigint, string];
+// V3 codegen represents Solidity tuples as object-keyed records, not
+// positional arrays. Runtime payloads are still JS arrays (indexable by 0,
+// 1, 2), but TS types are object-form, so signatures must match.
+export type EvmAction = { readonly 0: string; readonly 1: bigint; readonly 2: string };
 
 /**
  * Convert OSx-style on-chain action tuples `(target, value, data)` into the

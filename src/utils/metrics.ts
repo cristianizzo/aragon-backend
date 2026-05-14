@@ -3,7 +3,7 @@
  * Called from proposal, vote, and member handlers.
  */
 
-import type { HandlerContext } from "generated";
+import type { EvmOnEventContext as HandlerContext } from "envio";
 import { PluginActivityType } from "../enums";
 import { activityMetricId } from "../utils/ids";
 

@@ -1,4 +1,4 @@
-import { Admin } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { applyPluginMetadata } from "../services/pluginMetadata";
 import { createProposal, executeProposal } from "../services/proposal";
@@ -21,7 +21,7 @@ import { pluginId } from "../utils/ids";
  * definition single-signer.
  */
 
-Admin.AdminProposalCreated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "Admin", event: "AdminProposalCreated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -50,7 +50,7 @@ Admin.AdminProposalCreated.handler(async ({ event, context }) => {
   });
 });
 
-Admin.AdminProposalExecuted.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "Admin", event: "AdminProposalExecuted" }, async ({ event, context }) =>
   executeProposal(context, {
     chainId: event.chainId,
     pluginAddress: getAddress(event.srcAddress),
@@ -66,7 +66,7 @@ Admin.AdminProposalExecuted.handler(async ({ event, context }) =>
 // it on the Plugin row as `tokenAddress` so a single GraphQL query can
 // resolve "who can execute via this plugin" — same field used by
 // tokenVoting/lockToVote, just repurposed here for the admin address.
-Admin.MembershipContractAnnounced.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "Admin", event: "MembershipContractAnnounced" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin = await context.Plugin.get(pluginId(chainId, pluginAddress));
@@ -76,7 +76,7 @@ Admin.MembershipContractAnnounced.handler(async ({ event, context }) => {
   context.Plugin.set({ ...plugin, tokenAddress: definingContract });
 });
 
-Admin.AdminMetadataSet.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "Admin", event: "AdminMetadataSet" }, async ({ event, context }) => {
   await applyPluginMetadata(context, {
     chainId: event.chainId,
     pluginAddress: event.srcAddress,

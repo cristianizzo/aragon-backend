@@ -1,4 +1,4 @@
-import { TokenVoting } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { fetchTokenTotalSupplyAtBlock } from "../effects/token";
 import { PluginInterfaceType } from "../enums";
@@ -7,7 +7,7 @@ import { createProposal, executeProposal } from "../services/proposal";
 import { recordVote } from "../services/vote";
 import { pluginId, settingId } from "../utils/ids";
 
-TokenVoting.VotingSettingsUpdated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "TokenVoting", event: "VotingSettingsUpdated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -42,7 +42,7 @@ TokenVoting.VotingSettingsUpdated.handler(async ({ event, context }) => {
   });
 });
 
-TokenVoting.TokenVotingProposalCreated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "TokenVoting", event: "TokenVotingProposalCreated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -82,7 +82,7 @@ TokenVoting.TokenVotingProposalCreated.handler(async ({ event, context }) => {
   });
 });
 
-TokenVoting.TokenVotingProposalExecuted.handler(async ({ event, context }) =>
+indexer.onEvent({ contract: "TokenVoting", event: "TokenVotingProposalExecuted" }, async ({ event, context }) =>
   executeProposal(context, {
     chainId: event.chainId,
     pluginAddress: getAddress(event.srcAddress),
@@ -93,7 +93,7 @@ TokenVoting.TokenVotingProposalExecuted.handler(async ({ event, context }) =>
   }),
 );
 
-TokenVoting.VoteCast.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "TokenVoting", event: "VoteCast" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const plugin_id = pluginId(chainId, pluginAddress);
@@ -122,7 +122,7 @@ TokenVoting.VoteCast.handler(async ({ event, context }) => {
   });
 });
 
-TokenVoting.TokenVotingMetadataSet.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "TokenVoting", event: "TokenVotingMetadataSet" }, async ({ event, context }) => {
   await applyPluginMetadata(context, {
     chainId: event.chainId,
     pluginAddress: event.srcAddress,

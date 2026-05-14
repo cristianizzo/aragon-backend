@@ -1,4 +1,4 @@
-import type { HandlerContext } from "generated";
+import type { EvmOnEventContext as HandlerContext } from "envio";
 import { PluginActivityType, PluginInterfaceType } from "../enums";
 import { daoVoterId, pluginId, pluginMemberId, proposalId, voteId } from "../utils/ids";
 import { trackPluginActivity } from "../utils/metrics";

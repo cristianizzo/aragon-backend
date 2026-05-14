@@ -1,4 +1,4 @@
-import type { HandlerContext } from "generated";
+import type { EvmOnEventContext as HandlerContext } from "envio";
 import { getAddress } from "viem";
 import { fetchIpfsJson } from "../effects/ipfs";
 import logger from "../helpers/logger";

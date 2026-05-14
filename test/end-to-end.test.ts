@@ -1,4 +1,4 @@
-import { createTestIndexer } from "generated";
+import { createTestIndexer } from "envio";
 import { describe, expect, it } from "vitest";
 
 describe("End-to-End: Full DAO Lifecycle", () => {

@@ -1,4 +1,4 @@
-import { CapitalDistributor } from "generated";
+import { indexer } from "envio";
 import { getAddress } from "viem";
 import { fetchIpfsJson } from "../effects/ipfs";
 import { addMember } from "../services/member";
@@ -10,11 +10,11 @@ import { extractIpfsCid, parseCampaignMetadata } from "../utils/metadata";
 // `MerkleCampaignSet` / `MerkleCampaignUpdated` events route to our
 // `CampaignAllocationStrategy.ts` handlers. Mirrors legacy
 // `LogCampaignStrategy.start(allocationStrategy, ...)`.
-CapitalDistributor.CampaignCreated.contractRegister(({ event, context }) => {
-  context.addCampaignAllocationStrategy(event.params.allocationStrategy);
+indexer.contractRegister({ contract: "CapitalDistributor", event: "CampaignCreated" }, async ({ event, context }) => {
+  context.chain.CampaignAllocationStrategy.add(event.params.allocationStrategy);
 });
 
-CapitalDistributor.CampaignCreated.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "CapitalDistributor", event: "CampaignCreated" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const campaignId = event.params.campaignId.toString();
@@ -56,7 +56,7 @@ CapitalDistributor.CampaignCreated.handler(async ({ event, context }) => {
   });
 });
 
-CapitalDistributor.PayoutClaimed.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "CapitalDistributor", event: "PayoutClaimed" }, async ({ event, context }) => {
   const chainId = event.chainId;
   const pluginAddress = getAddress(event.srcAddress);
   const campaignIndex = event.params.campaignId.toString();
@@ -109,7 +109,7 @@ CapitalDistributor.PayoutClaimed.handler(async ({ event, context }) => {
   await addMember(context, { address: recipient, blockNumber: event.block.number });
 });
 
-CapitalDistributor.CampaignPaused.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "CapitalDistributor", event: "CampaignPaused" }, async ({ event, context }) => {
   const id = makeCampaignId(event.chainId, event.srcAddress, event.params.campaignId.toString());
   const campaign = await context.Campaign.get(id);
   if (campaign) {
@@ -117,7 +117,7 @@ CapitalDistributor.CampaignPaused.handler(async ({ event, context }) => {
   }
 });
 
-CapitalDistributor.CampaignResumed.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "CapitalDistributor", event: "CampaignResumed" }, async ({ event, context }) => {
   const id = makeCampaignId(event.chainId, event.srcAddress, event.params.campaignId.toString());
   const campaign = await context.Campaign.get(id);
   if (campaign) {
@@ -125,7 +125,7 @@ CapitalDistributor.CampaignResumed.handler(async ({ event, context }) => {
   }
 });
 
-CapitalDistributor.CampaignEnded.handler(async ({ event, context }) => {
+indexer.onEvent({ contract: "CapitalDistributor", event: "CampaignEnded" }, async ({ event, context }) => {
   const id = makeCampaignId(event.chainId, event.srcAddress, event.params.campaignId.toString());
   const campaign = await context.Campaign.get(id);
   if (campaign) {
@@ -133,14 +133,17 @@ CapitalDistributor.CampaignEnded.handler(async ({ event, context }) => {
   }
 });
 
-CapitalDistributor.CapitalDistributorMetadataSet.handler(async ({ event, context }) => {
-  await applyPluginMetadata(context, {
-    chainId: event.chainId,
-    pluginAddress: event.srcAddress,
-    metadata: event.params.metadata,
-    blockNumber: event.block.number,
-    blockTimestamp: event.block.timestamp,
-    transactionHash: event.transaction.hash,
-    logIndex: event.logIndex,
-  });
-});
+indexer.onEvent(
+  { contract: "CapitalDistributor", event: "CapitalDistributorMetadataSet" },
+  async ({ event, context }) => {
+    await applyPluginMetadata(context, {
+      chainId: event.chainId,
+      pluginAddress: event.srcAddress,
+      metadata: event.params.metadata,
+      blockNumber: event.block.number,
+      blockTimestamp: event.block.timestamp,
+      transactionHash: event.transaction.hash,
+      logIndex: event.logIndex,
+    });
+  },
+);

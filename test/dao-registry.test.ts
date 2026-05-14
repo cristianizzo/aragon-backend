@@ -1,4 +1,4 @@
-import { createTestIndexer } from "generated";
+import { createTestIndexer } from "envio";
 import { describe, expect, it } from "vitest";
 
 // Block 16726392: First Multisig DAO creation on Ethereum mainnet
