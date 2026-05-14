@@ -58,10 +58,26 @@ export async function addToken(
     return;
   }
 
-  const metadata = await context.effect(fetchTokenMetadata, {
-    tokenAddress,
-    chainId: params.chainId,
-  });
+  // Run the metadata effect and the backward-lookup permission query in
+  // parallel — they're independent and both hit external systems
+  // (RPC + DB getWhere). Envio's perf dashboard flagged loaders as the
+  // main bottleneck; collapsing two awaits into one cuts first-sight
+  // latency roughly in half.
+  //
+  // Backward-lookup rationale: a DAO may have been granted
+  // MINT_PERMISSION on this token BEFORE we discovered the token via
+  // Transfer events. Envio's getWhere only allows ONE filter field, so
+  // we query by `whereAddress` (very selective — most tokens never
+  // appear as a permission `where`) and filter the rest in memory.
+  // Forward-flip in DAO.Granted handler covers grants that arrive
+  // after the Token row exists.
+  const [metadata, permsAtAddress] = await Promise.all([
+    context.effect(fetchTokenMetadata, {
+      tokenAddress,
+      chainId: params.chainId,
+    }),
+    context.DaoPermission.getWhere({ whereAddress: { _eq: tokenAddress } }),
+  ]);
 
   // Default to erc20 when bytecode detection fails — addToken is currently
   // only called from ERC20-flavoured paths (wildcard Transfer handler +
@@ -72,16 +88,6 @@ export async function addToken(
   const detectedType = metadata?.interfaceType === TokenType.Erc721 ? TokenType.Erc721 : TokenType.Erc20;
   const isGovernance = (metadata?.isGovernance ?? false) || (params.isGovernance ?? false);
   const isEscrowAdapter = metadata?.isEscrowAdapter ?? false;
-
-  // Backward-lookup: a DAO may have been granted MINT_PERMISSION on this token
-  // BEFORE we discovered the token via Transfer events. Envio's getWhere only
-  // allows ONE filter field, so query by `whereAddress` (very selective —
-  // most tokens never appear as a permission `where`) and filter the rest in
-  // memory. Forward-flip in DAO.Granted handler covers grants that arrive
-  // after the Token row exists.
-  const permsAtAddress = await context.DaoPermission.getWhere({
-    whereAddress: { _eq: tokenAddress },
-  });
   const mintableByDao = permsAtAddress.some(
     (p) => p.permissionId === MINT_PERMISSION_ID && p.event === PermissionEvent.Granted,
   );

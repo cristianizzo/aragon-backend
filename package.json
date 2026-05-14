@@ -11,7 +11,13 @@
     "lint": "biome check src/ test/",
     "lint:fix": "biome check --write src/ test/",
     "format": "biome format --write src/ test/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "spartakus:start": "scripts/deploy-spartakus.sh",
+    "spartakus:restart": "scripts/deploy-spartakus.sh",
+    "spartakus:logs": "ssh ${ARAGON_DEPLOY_HOST:-spartakus} 'tail -f /opt/workspace/aragon-indexer/indexer.log'",
+    "spartakus:stop": "ssh ${ARAGON_DEPLOY_HOST:-spartakus} \"pkill -f 'envio start'; docker rm -f envio-hasura\"",
+    "spartakus:status": "ssh ${ARAGON_DEPLOY_HOST:-spartakus} \"pgrep -fa 'envio start' | head -3; docker ps --format '{{.Names}}\\t{{.Status}}' | grep -E 'envio'\"",
+    "spartakus:hasura": "echo '→ Hasura console at http://localhost:9000 (admin-secret: testing) — Ctrl+C to disconnect' && ssh -N -L 9000:localhost:9000 ${ARAGON_DEPLOY_HOST:-spartakus}"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",

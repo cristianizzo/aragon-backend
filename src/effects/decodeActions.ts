@@ -13,6 +13,16 @@ import { decodeActions } from "../helpers/actionDecoder";
  * `JSON.parse` the result; consumers that put the value straight into a
  * `Json` schema column should pass the string through `safeJsonParse`
  * first.
+ *
+ * Caching is **disabled** here. The Envio effect cache puts a B-tree
+ * index on the input column, and Postgres's hard 8191-byte limit per
+ * index row crashes the indexer on any proposal whose serialized
+ * actions exceed that (encountered in production around event 790M when
+ * a proposal carried >13KB of calldata across its actions). Sub-call
+ * caches inside `actionDecoder.ts` (Etherscan source map, 4byte
+ * directory map, EIP-1967 proxy map — all in-memory `Map`s) still dedupe
+ * within the process so the per-proposal cost is bounded by the unique
+ * targets / selectors, not the full pipeline.
  */
 export const decodeProposalActions = createEffect(
   {
@@ -29,7 +39,7 @@ export const decodeProposalActions = createEffect(
       daoAddress: S.string,
     }),
     output: S.union([S.string, null]),
-    cache: true,
+    cache: false,
     rateLimit: false,
   },
   async ({ input }) => {
